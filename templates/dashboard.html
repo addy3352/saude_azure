@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>SAUDE Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { background:#f6f7fb; }
+    .kpi { min-height: 110px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+  </style>
+</head>
+<body>
+<div class="container py-4">
+  <div class="d-flex align-items-center mb-3">
+    <h3 class="me-3 mb-0">SAUDE</h3>
+    <ul class="nav nav-pills">
+      <li class="nav-item"><a class="nav-link active" href="#">Home</a></li>
+      <li class="nav-item"><a class="nav-link" href="#">Pipelines</a></li>
+      <li class="nav-item"><a class="nav-link" href="#">Infra</a></li>
+    </ul>
+  </div>
+
+  <!-- KPIs -->
+  <div class="row g-3 mb-3 text-center">
+    <div class="col-md-3">
+      <div class="bg-white shadow-sm rounded p-3 kpi">
+        <div class="text-muted">Success</div>
+        <div id="kpi-success" class="fs-3 fw-semibold">—</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="bg-white shadow-sm rounded p-3 kpi">
+        <div class="text-muted">MTTR</div>
+        <div id="kpi-mttr" class="fs-3 fw-semibold">—</div>
+        <div class="text-muted small">recent SRE runs</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="bg-white shadow-sm rounded p-3 kpi">
+        <div class="text-muted">Open Alerts</div>
+        <div id="kpi-alerts" class="fs-3 fw-semibold">—</div>
+        <div class="text-muted small">needs wiring later</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="bg-white shadow-sm rounded p-3 kpi">
+        <div class="text-muted">Failed Runs</div>
+        <div id="kpi-failed" class="fs-3 fw-semibold">—</div>
+        <div class="text-muted small">from recent SRE actions</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="row g-3">
+    <div class="col-md-6">
+      <div class="bg-white shadow-sm rounded p-3">
+        <div class="d-flex justify-content-between align-items-center">
+          <h5 class="mb-2">Products by number of resources</h5>
+          <button id="btn-view-resources" class="btn btn-sm btn-outline-dark">View resources</button>
+        </div>
+        <canvas id="productsChart" height="180"></canvas>
+        <div class="text-muted small mt-2">
+          <span class="mono">██</span> Terraform created &nbsp; <span class="mono" style="opacity:.6;">██</span> Manual
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-6">
+      <div class="bg-white shadow-sm rounded p-3">
+        <h5 class="mb-2">Types of failure</h5>
+        <canvas id="failuresChart" height="180"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Chatbot panel (placeholder) -->
+  <div class="bg-white shadow-sm rounded p-3 mt-3">
+    <h5 class="mb-2">Chatbot — Agent SAUDE</h5>
+    <div class="border rounded p-3 bg-light">Coming soon — hook to /chat (or WebSocket)</div>
+  </div>
+</div>
+
+<script>
+  const productsChartEl = document.getElementById('productsChart');
+  const failuresChartEl = document.getElementById('failuresChart');
+
+  let productsChart, failuresChart;
+
+  async function loadProducts() {
+    const rsp = await fetch('/api/resources/summary?limit=7');
+    const json = await rsp.json();
+    const items = json.items || [];
+    const labels = items.map(i => i.product);
+    const terraform = items.map(i => i.created_by_terraform || 0);
+    const manual = items.map(i => Math.max(0, (i.azure_total || 0) - (i.created_by_terraform || 0)));
+
+    if (productsChart) productsChart.destroy();
+    productsChart = new Chart(productsChartEl, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Terraform', data: terraform, backgroundColor: 'rgba(34, 197, 94, 0.9)' },
+          { label: 'Manual',    data: manual,    backgroundColor: 'rgba(31, 41, 55, 0.4)' }
+        ]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { position: 'top' } },
+        scales: { y: { beginAtZero: true, ticks: { precision:0 } } }
+      }
+    });
+
+    // “View resources” → Azure Portal All resources (you can refine later)
+    document.getElementById('btn-view-resources').onclick = () => {
+      window.open('https://portal.azure.com/#view/HubsExtension/BrowseAll', '_blank');
+    };
+  }
+
+  function aggregateFailures(decisions) {
+    const buckets = {
+      transient: 0, filenotfound: 0, network: 0, auth: 0, quota: 0, config: 0, data: 0, other: 0
+    };
+    decisions.forEach(d => {
+      const c = (d.category || 'other').toLowerCase();
+      if (buckets[c] === undefined) buckets.other++; else buckets[c]++;
+    });
+    // Return top 4 like your sketch (Transient, File not found, Network, Auth)
+    const order = ['transient','filenotfound','network','auth','data','config','quota','other'];
+    const labels = order.filter(k => buckets[k]>0).slice(0, 6);
+    return { labels, counts: labels.map(l => buckets[l]) };
+  }
+
+  function computeKpis(decisions) {
+    // Failed runs = number of SRE decisions (recent)
+    const failed = decisions.length;
+
+    // Success% (coarse): consider 'escalate' as not successful; 'retry' eventually success-ish
+    const escalations = decisions.filter(d => (d.action || '').toLowerCase().includes('escalate')).length;
+    const successPct = failed === 0 ? 100 : Math.round(100 * (failed - escalations) / failed);
+
+    // MTTR (very rough): if decisions carry createdAt and a resolvedAt later, compute; else show “—”
+    const mttr = '—'; // wire to your durable status history later
+
+    // Open alerts (placeholder): escalations ~= open incident
+    const openAlerts = escalations;
+
+    return { failed, successPct, mttr, openAlerts };
+  }
+
+  async function loadFailuresAndKpis() {
+    const rsp = await fetch('/api/sre/last-decisions?limit=100');
+    const json = await rsp.json();
+    const items = json.items || [];
+
+    // Chart: Types of failure
+    const agg = aggregateFailures(items);
+    if (failuresChart) failuresChart.destroy();
+    failuresChart = new Chart(failuresChartEl, {
+      type: 'bar',
+      data: {
+        labels: agg.labels.map(x => {
+          if (x === 'filenotfound') return 'File not found';
+          return x[0].toUpperCase() + x.slice(1);
+        }),
+        datasets: [{ label: 'Count', data: agg.counts, backgroundColor: 'rgba(59, 130, 246, 0.9)' }]
+      },
+      options: { responsive: true, scales: { y: { beginAtZero: true, ticks: { precision:0 } } } }
+    });
+
+    // KPIs (derived from recent SRE)
+    const k = computeKpis(items);
+    document.getElementById('kpi-failed').textContent   = String(k.failed);
+    document.getElementById('kpi-success').textContent  = `${k.successPct}%`;
+    document.getElementById('kpi-mttr').textContent     = k.mttr;
+    document.getElementById('kpi-alerts').textContent   = String(k.openAlerts);
+  }
+
+  // Initial load
+  loadProducts().catch(console.error);
+  loadFailuresAndKpis().catch(console.error);
+
+  // Refresh every 60s
+  setInterval(() => {
+    loadProducts().catch(console.error);
+    loadFailuresAndKpis().catch(console.error);
+  }, 60000);
+</script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+### `.dockerignore` (at repo root)
+```gitignore
+**/__pycache__/
+**/*.pyc
+.env
+.env.*
+.git
+.gitignore
+.vscode
+__pycache__/
+*.log
+*~
+Dockerfile*
