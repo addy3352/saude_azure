@@ -16,6 +16,7 @@ app = Flask(__name__)
 #app.config["TEMPLATES_AUTO_RELOAD"] = True
 #app.jinja_env.auto_reload = True
 
+print("Inside Just started")
 @app.route("/")
 def dashboard():
     # Data is fetched client-side from:
@@ -56,6 +57,7 @@ def get_status(instance_id: str):
 # ------------------ Minimal chat stub (optional) ------------------
 # This shows how your AOAI tool-calls would hit the pretty routes above.
 # Replace with your real chat orchestration.
+print("before chat")
 @app.post("/chat")
 def chat_stub():
     body = request.get_json(force=True)
@@ -99,4 +101,4 @@ def chat_stub():
     return jsonify({"reply": "How can I help? (try 'triage' or 'list vms')"})
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 8000)),debug=True)
