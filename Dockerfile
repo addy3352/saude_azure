@@ -11,17 +11,17 @@ build-essential curl \
 
 
 # Install Python deps first for better caching
-COPY requirements.txt ./requirements.txt
+COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
 
 # Run as non-root
-RUN useradd -m appuser
-USER appuser
+#RUN useradd -m appuser
+#USER appuser
 
 
 # Copy app source
-COPY ./ ./
+COPY . .
 
 
 # Gunicorn defaults; override via App Settings if needed
