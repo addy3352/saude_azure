@@ -11,7 +11,7 @@ build-essential curl \
 
 
 # Install Python deps first for better caching
-COPY saude-app/requirements.txt ./requirements.txt
+COPY requirements.txt ./requirements.txt
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
 
@@ -21,7 +21,7 @@ USER appuser
 
 
 # Copy app source
-COPY saude-app/ ./
+COPY ./ ./
 
 
 # Gunicorn defaults; override via App Settings if needed
