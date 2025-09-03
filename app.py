@@ -21,6 +21,7 @@ def dashboard():
     # Data is fetched client-side from:
     #   /api/resources/summary
     #   /api/sre/last-decisions
+    print("I am here ")
     return render_template("dashboard.html")
   
 @app.get("/")
