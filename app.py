@@ -24,7 +24,7 @@ def dashboard():
     print("I am here ")
     return render_template("dashboard.html")
   
-@app.get("/")
+@app.get("/health")
 def health():
     return {"ok": True, "service": "saude-app"}
 
