@@ -9,7 +9,7 @@ TABLE_MESSAGES = os.getenv("TABLE_MESSAGES", "Messages")
 TABLE_DECISIONS = os.getenv("TABLE_DECISIONS", "AgentDecisions")
 
 _cred = DefaultAzureCredential(exclude_interactive_browser_credential=False)
-_svc = TableServiceClient(account_url=ACCOUNT_URL, credential=_cred)
+_svc = TableServiceClient(endpoint=ACCOUNT_URL, credential=_cred)
 _messages = _svc.get_table_client(TABLE_MESSAGES)
 _decisions = _svc.get_table_client(TABLE_DECISIONS)
 
