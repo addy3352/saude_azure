@@ -10,6 +10,8 @@ TABLE_DECISIONS = os.getenv("TABLE_DECISIONS", "AgentDecisions")
 
 _cred = DefaultAzureCredential(exclude_interactive_browser_credential=False)
 _table_clients = {}
+
+
 def _get_table_client(table_name: str):
     """Lazily initialize and return a TableClient."""
     if table_name not in _table_clients:
@@ -23,10 +25,16 @@ def _get_table_client(table_name: str):
             print(f"Error initializing table client for '{table_name}': {e}")
             raise  # Re-raise to ensure app fails if tables can't be set up
     return _table_clients[table_name]
+
+def _table_client():
+    cred = DefaultAzureCredential()
+    svc  = TableServiceClient(account_url=ACCOUNT_URL, credential=cred)
+    return svc.get_table_client(TABLE_DECISIONS)
+
 def save_message(conversation_id: str, role: str, content: str, tool_calls: str | None = None, ttl_days: int = 30):
     entity = {
         "PartitionKey": conversation_id,
-        "RowKey": str(uuid.uuid4()),
+                "RowKey": str(uuid.uuid4()),
         "role": role,
         "content": content,
         "toolCallsJson": tool_calls or "",
@@ -49,6 +57,35 @@ def save_decision(conversation_id: str, agent: str, category: str, action: str, 
     }
     decisions_client.upsert_entity(entity)
 
+def list_decisions(pipeline: str | None, top: int = 50):
+    t = _table_client()
+    # No server-side order in Table Storage → fetch a page and sort locally by Timestamp/ts desc
+    if pipeline:
+        query = f"PartitionKey eq '{pipeline}'"
+        pager = t.query_entities(query, results_per_page=top)
+    else:
+        pager = t.list_entities(results_per_page=top)
+
+    items = []
+    for e in pager.by_page():            # first page only (top)
+        for ent in e:
+            items.append({
+                "ts": ent.get("ts") or str(ent.get("Timestamp")),
+                "pipeline_name": ent.get("PartitionKey"),
+                "factory": ent.get("factory"),
+                "category": ent.get("category"),
+                "action": ent.get("action"),
+                "status": ent.get("status"),
+                "why": ent.get("why"),
+                "run_id": ent.get("run_id"),
+                "expected_path": ent.get("expected_path"),
+                "instance_id": ent.get("instance_id"),
+            })
+        break
+    # Sort newest first
+    items.sort(key=lambda x: x.get("ts",""), reverse=True)
+    return items[:top]
+
 #_svc = TableServiceClient(endpoint=ACCOUNT_URL, credential=_cred)
 #_messages = _svc.get_table_client(TABLE_MESSAGES)
 #_decisions = _svc.get_table_client(TABLE_DECISIONS)
@@ -62,6 +99,3 @@ def save_decision(conversation_id: str, agent: str, category: str, action: str, 
 #    _decisions.create_table()
 #except Exception:
 #    pass
-
-
-

@@ -1,195 +1,365 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>SAUDE Dashboard</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="stylesheet"
-        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <style>
-    body { background:#f6f7fb; }
-    .kpi { min-height: 110px; }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAUDE Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .tab-pane { display: none; }
+        .tab-pane.active { display: block; }
+        .chat-container {
+            height: 500px;
+            overflow-y: auto;
+        }
+        .chat-message {
+            margin-bottom: 1rem;
+        }
+        .user-message {
+            background-color: #2563eb;
+            color: white;
+            align-self: flex-end;
+            border-radius: 1.5rem 1.5rem 0.5rem 1.5rem;
+            padding: 0.75rem 1.25rem;
+            max-width: 70%;
+        }
+        .agent-message {
+            background-color: #e5e7eb;
+            color: #1f2937;
+            border-radius: 1.5rem 1.5rem 1.5rem 0.5rem;
+            padding: 0.75rem 1.25rem;
+            max-width: 70%;
+        }
+    </style>
 </head>
-<body>
-<div class="container py-4">
-  <div class="d-flex align-items-center mb-3">
-    <h3 class="me-3 mb-0">SAUDE</h3>
-    <ul class="nav nav-pills">
-      <li class="nav-item"><a class="nav-link active" href="#">Home</a></li>
-      <li class="nav-item"><a class="nav-link" href="#">Pipelines</a></li>
-      <li class="nav-item"><a class="nav-link" href="#">Infra</a></li>
-    </ul>
-  </div>
+<body class="bg-gray-100 text-gray-800">
+    <div class="max-w-7xl mx-auto p-4 md:p-8">
 
-  <!-- KPIs -->
-  <div class="row g-3 mb-3 text-center">
-    <div class="col-md-3">
-      <div class="bg-white shadow-sm rounded p-3 kpi">
-        <div class="text-muted">Success</div>
-        <div id="kpi-success" class="fs-3 fw-semibold">—</div>
-      </div>
-    </div>
-    <div class="col-md-3">
-      <div class="bg-white shadow-sm rounded p-3 kpi">
-        <div class="text-muted">MTTR</div>
-        <div id="kpi-mttr" class="fs-3 fw-semibold">—</div>
-        <div class="text-muted small">recent SRE runs</div>
-      </div>
-    </div>
-    <div class="col-md-3">
-      <div class="bg-white shadow-sm rounded p-3 kpi">
-        <div class="text-muted">Open Alerts</div>
-        <div id="kpi-alerts" class="fs-3 fw-semibold">—</div>
-        <div class="text-muted small">needs wiring later</div>
-      </div>
-    </div>
-    <div class="col-md-3">
-      <div class="bg-white shadow-sm rounded p-3 kpi">
-        <div class="text-muted">Failed Runs</div>
-        <div id="kpi-failed" class="fs-3 fw-semibold">—</div>
-        <div class="text-muted small">from recent SRE actions</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Charts -->
-  <div class="row g-3">
-    <div class="col-md-6">
-      <div class="bg-white shadow-sm rounded p-3">
-        <div class="d-flex justify-content-between align-items-center">
-          <h5 class="mb-2">Products by number of resources</h5>
-          <button id="btn-view-resources" class="btn btn-sm btn-outline-dark">View resources</button>
+        <!-- Header and Navigation -->
+        <div class="flex items-center justify-between mb-8">
+            <h1 class="text-3xl font-bold text-gray-800">SAUDE MVP</h1>
+            <nav class="flex space-x-6">
+                <a href="#dashboard" id="nav-dashboard" class="text-gray-700 hover:text-blue-600 font-medium border-b-2 border-transparent">DASHBOARD</a>
+                <a href="#pipelines" id="nav-pipelines" class="text-gray-700 hover:text-blue-600 font-medium border-b-2 border-transparent">PIPELINES</a>
+                <a href="#chat" id="nav-chat" class="text-gray-700 hover:text-blue-600 font-medium border-b-2 border-transparent">CHATBOT</a>
+                <a href="#architecture" id="nav-architecture" class="text-gray-700 hover:text-blue-600 font-medium border-b-2 border-transparent">ARCHITECTURE</a>
+            </nav>
         </div>
-        <canvas id="productsChart" height="180"></canvas>
-        <div class="text-muted small mt-2">
-          <span class="mono">██</span> Terraform created &nbsp; <span class="mono" style="opacity:.6;">██</span> Manual
+
+        <!-- Tab Content Containers -->
+        <div id="content-container">
+
+            <!-- Dashboard Tab -->
+            <div id="tab-dashboard" class="tab-pane active">
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-6 mb-8">
+                    <div class="bg-white rounded-lg shadow-sm p-6 text-center">
+                        <div class="text-sm text-gray-500">SUCCESS</div>
+                        <div class="text-3xl font-bold mt-2 text-green-600">80%</div>
+                    </div>
+                    <div class="bg-white rounded-lg shadow-sm p-6 text-center">
+                        <div class="text-sm text-gray-500">MTTR</div>
+                        <div class="text-3xl font-bold mt-2">15m</div>
+                    </div>
+                    <div class="bg-white rounded-lg shadow-sm p-6 text-center">
+                        <div class="text-sm text-gray-500">OPEN ALERTS</div>
+                        <div class="text-3xl font-bold mt-2 text-yellow-500">6</div>
+                    </div>
+                    <div class="bg-white rounded-lg shadow-sm p-6 text-center">
+                        <div class="text-sm text-gray-500">FAILED RUNS</div>
+                        <div class="text-3xl font-bold mt-2 text-red-600">10</div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div class="bg-white rounded-lg shadow-sm p-6">
+                        <h2 class="text-xl font-semibold mb-4">Products by Number of Resources</h2>
+                        <div class="chart-container relative w-full h-96">
+                            <canvas id="resourcesChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-lg shadow-sm p-6">
+                        <h2 class="text-xl font-semibold mb-4">Last SRE Decisions</h2>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pipeline</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="decisions-table-body" class="bg-white divide-y divide-gray-200">
+                                    <!-- Data will be populated here by JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pipeline Tab -->
+            <div id="tab-pipelines" class="tab-pane">
+                <div class="card bg-white rounded-lg shadow-sm">
+                    <div class="card-header p-6 flex flex-col sm:flex-row justify-between items-center space-y-4 sm:space-y-0">
+                        <h3 class="text-xl font-semibold">Pipeline Events</h3>
+                        <div class="flex gap-2 sm:gap-4 items-center">
+                            <input id="pipelineFilter" placeholder="Filter by pipeline name" class="px-4 py-2 border rounded-lg" />
+                            <button onclick="loadFeed()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">Refresh</button>
+                        </div>
+                    </div>
+                    <div class="card-body p-6">
+                        <div class="overflow-x-auto">
+                            <table id="pipelineFeed" class="min-w-full divide-y divide-gray-200">
+                                <thead>
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time (UTC)</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pipeline</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Why</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Run Id</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Durable</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                        <div id="emptyState" class="mt-4 text-center text-gray-500" style="display:none;">No events yet.</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chatbot Tab -->
+            <div id="tab-chat" class="tab-pane">
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <h2 class="text-xl font-semibold mb-4">Chat with Agent-Info</h2>
+                    <div id="chat-window" class="chat-container flex flex-col space-y-4 p-4 bg-gray-50 rounded-lg mb-4">
+                        <div class="flex">
+                            <div class="agent-message">How can I help? Try asking "list vms" or "triage".</div>
+                        </div>
+                    </div>
+                    <form id="chat-form" class="flex items-center space-x-4">
+                        <input type="text" id="chat-input" placeholder="Ask a question about your infra..." class="flex-grow px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">Send</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Architecture Tab -->
+            <div id="tab-architecture" class="tab-pane">
+                <h2 class="text-3xl font-bold text-center mb-6 text-gray-800">SAUDE Architecture & Documentation</h2>
+                <div class="bg-white rounded-lg shadow-sm p-6 md:p-10 prose prose-lg max-w-none">
+                    <p>The SAUDE application is a powerful, event-driven system designed to automate the operational tasks of Site Reliability Engineers (SREs). It combines a lightweight web façade with a serverless backend to intelligently respond to failures and provide real-time insights.</p>
+                    <div class="mt-8">
+                        <h3 class="text-2xl font-bold">Key Components</h3>
+                        <ul class="list-disc list-inside space-y-4">
+                            <li>
+                                <strong class="text-blue-600">SAUDE Web App (Flask Façade)</strong>: The central brain and user interface. It hosts the dashboard, chatbot, and critical orchestration logic. It's the only component with a public endpoint, acting as a secure gateway to the backend agents.
+                            </li>
+                            <li>
+                                <strong class="text-blue-600">Agent-SRE-Func (Durable Functions)</strong>: The worker responsible for executing long-running, stateful workflows. Its primary role is to manage the automated triage, including multi-step retries and notifications. The use of Durable Functions ensures these workflows are resilient to failures and can survive long waits.
+                            </li>
+                            <li>
+                                <strong class="text-blue-600">Agent-Info-Func (Functions)</strong>: The information agent. It provides a simple API for querying Azure infrastructure by using the Azure Resource Graph, enabling a "chat-like" feature to inspect deployed resources.
+                            </li>
+                            <li>
+                                <strong class="text-blue-600">Azure Services</strong>:
+                                <ul class="list-disc list-inside ml-8 space-y-2">
+                                    <li><strong>Azure Monitor</strong>: Triggers alerts for pipeline failures and sends them to the SAUDE app via webhooks.</li>
+                                    <li><strong>Azure OpenAI</strong>: Used by the SAUDE web app to intelligently classify failure types based on error messages, replacing simple heuristics.</li>
+                                    <li><strong>Azure Table Storage</strong>: Provides a simple, high-speed key-value store for logging audit trails of all agent decisions and actions.</li>
+                                </ul>
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="mt-8">
+                        <h3 class="text-2xl font-bold">Workflow</h3>
+                        <p>The process is event-driven and follows a clear, linear flow:</p>
+                        <ol class="list-decimal list-inside space-y-4">
+                            <li>An <strong>ADF pipeline fails</strong>, triggering an <strong>Azure Monitor alert</strong>.</li>
+                            <li>The alert's <strong>webhook is sent to the SAUDE web app</strong>, which is configured to receive and process the payload.</li>
+                            <li>The web app calls <strong>Azure OpenAI</strong> to classify the failure.</li>
+                            <li>Based on the classification, the web app either calls the <strong>SRE agent for an automated retry</strong> or accepts the alert for manual notification.</li>
+                            <li>All decisions are logged to <strong>Azure Table Storage</strong> for audit.</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+
         </div>
-      </div>
     </div>
 
-    <div class="col-md-6">
-      <div class="bg-white shadow-sm rounded p-3">
-        <h5 class="mb-2">Types of failure</h5>
-        <canvas id="failuresChart" height="180"></canvas>
-      </div>
-    </div>
-  </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const tabs = {
+                dashboard: document.getElementById('tab-dashboard'),
+                pipelines: document.getElementById('tab-pipelines'),
+                chat: document.getElementById('tab-chat'),
+                architecture: document.getElementById('tab-architecture')
+            };
 
-  <!-- Chatbot panel (placeholder) -->
-  <div class="bg-white shadow-sm rounded p-3 mt-3">
-    <h5 class="mb-2">Chatbot — Agent SAUDE</h5>
-    <div class="border rounded p-3 bg-light">Coming soon — hook to /chat (or WebSocket)</div>
-  </div>
-</div>
+            const navs = {
+                dashboard: document.getElementById('nav-dashboard'),
+                pipelines: document.getElementById('nav-pipelines'),
+                chat: document.getElementById('nav-chat'),
+                architecture: document.getElementById('nav-architecture')
+            };
 
-<script>
-  const productsChartEl = document.getElementById('productsChart');
-  const failuresChartEl = document.getElementById('failuresChart');
+            function activateTab(tabName) {
+                for (const name in tabs) {
+                    tabs[name].classList.remove('active');
+                    navs[name].classList.remove('border-blue-600', 'font-bold');
+                    navs[name].classList.add('border-transparent', 'font-medium');
+                }
+                tabs[tabName].classList.add('active');
+                navs[tabName].classList.add('border-blue-600', 'font-bold');
+                navs[tabName].classList.remove('border-transparent', 'font-medium');
+            }
 
-  let productsChart, failuresChart;
+            // Initial tab state
+            const initialTab = window.location.hash.substring(1) || 'dashboard';
+            activateTab(initialTab);
+            
+            // Event listeners for navigation
+            for (const name in navs) {
+                navs[name].addEventListener('click', (e) => {
+                    e.preventDefault();
+                    window.location.hash = name;
+                    activateTab(name);
+                });
+            }
 
-  async function loadProducts() {
-    const rsp = await fetch('/api/resources/summary?limit=7');
-    const json = await rsp.json();
-    const items = json.items || [];
-    const labels = items.map(i => i.product);
-    const terraform = items.map(i => i.created_by_terraform || 0);
-    const manual = items.map(i => Math.max(0, (i.azure_total || 0) - (i.created_by_terraform || 0)));
+            // Fetch and populate dashboard data
+            function loadDashboardData() {
+                const apiBaseUrl = window.location.origin;
+                fetch(`${apiBaseUrl}/api/resources/summary`)
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        const ctx = document.getElementById('resourcesChart').getContext('2d');
+                        new Chart(ctx, {
+                            type: 'bar',
+                            data: {
+                                labels: data.items.map(item => item.product),
+                                datasets: [{
+                                    label: 'Total Azure',
+                                    data: data.items.map(item => item.azure_total),
+                                    backgroundColor: 'rgba(59, 130, 246, 0.7)',
+                                }, {
+                                    label: 'Created by Terraform',
+                                    data: data.items.map(item => item.created_by_terraform),
+                                    backgroundColor: 'rgba(16, 185, 129, 0.7)',
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                scales: {
+                                    x: { stacked: true },
+                                    y: { stacked: true }
+                                }
+                            }
+                        });
+                    })
+                    .catch(e => console.error("Could not fetch dashboard data:", e));
+            }
 
-    if (productsChart) productsChart.destroy();
-    productsChart = new Chart(productsChartEl, {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [
-          { label: 'Terraform', data: terraform, backgroundColor: 'rgba(34, 197, 94, 0.9)' },
-          { label: 'Manual',    data: manual,    backgroundColor: 'rgba(31, 41, 55, 0.4)' }
-        ]
-      },
-      options: {
-        responsive: true,
-        plugins: { legend: { position: 'top' } },
-        scales: { y: { beginAtZero: true, ticks: { precision:0 } } }
-      }
-    });
+            // Fetch and populate pipelines data
+            async function loadFeed() {
+                const apiBaseUrl = window.location.origin;
+                const pipeline = document.getElementById('pipelineFilter').value.trim();
+                const q = pipeline ? ('?pipeline=' + encodeURIComponent(pipeline)) : '';
+                const res = await fetch(`${apiBaseUrl}/api/sre/actions` + q);
+                const items = await res.json();
+                
+                const tbody = document.querySelector('#pipelineFeed tbody');
+                tbody.innerHTML = '';
+            
+                if (!items.length) {
+                    document.getElementById('emptyState').style.display = 'block';
+                    return;
+                }
+                document.getElementById('emptyState').style.display = 'none';
+            
+                for (const it of items) {
+                    const tr = document.createElement('tr');
+                    const statusUrl = it.instance_id ? `/status/${it.instance_id}` : null;
+                    const why = it.context ? (JSON.parse(it.context).why || '').slice(0, 80) : '';
 
-    // “View resources” → Azure Portal All resources (you can refine later)
-    document.getElementById('btn-view-resources').onclick = () => {
-      window.open('https://portal.azure.com/#view/HubsExtension/BrowseAll', '_blank');
-    };
-  }
+                    tr.innerHTML = `
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${it.createdAt || ''}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${it.pipeline || ''}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${it.category || ''}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${it.action || ''}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${it.status || ''}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" title="${why}">${why}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${it.run_id || ''}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${statusUrl ? `<a href="${statusUrl}" target="_blank" class="text-blue-600 hover:text-blue-800">status</a>` : ''}</td>
+                    `;
+                    tbody.appendChild(tr);
+                }
+            }
 
-  function aggregateFailures(decisions) {
-    const buckets = {
-      transient: 0, filenotfound: 0, network: 0, auth: 0, quota: 0, config: 0, data: 0, other: 0
-    };
-    decisions.forEach(d => {
-      const c = (d.category || 'other').toLowerCase();
-      if (buckets[c] === undefined) buckets.other++; else buckets[c]++;
-    });
-    // Return top 4 like your sketch (Transient, File not found, Network, Auth)
-    const order = ['transient','filenotfound','network','auth','data','config','quota','other'];
-    const labels = order.filter(k => buckets[k]>0).slice(0, 6);
-    return { labels, counts: labels.map(l => buckets[l]) };
-  }
+            // Chatbot functionality
+            const chatForm = document.getElementById('chat-form');
+            const chatInput = document.getElementById('chat-input');
+            const chatWindow = document.getElementById('chat-window');
+            
+            chatForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const userMessage = chatInput.value.trim();
+                if (!userMessage) return;
 
-  function computeKpis(decisions) {
-    // Failed runs = number of SRE decisions (recent)
-    const failed = decisions.length;
+                // Display user message
+                const userMsgDiv = document.createElement('div');
+                userMsgDiv.className = 'flex justify-end';
+                userMsgDiv.innerHTML = `<div class="user-message">${userMessage}</div>`;
+                chatWindow.appendChild(userMsgDiv);
+                chatWindow.scrollTop = chatWindow.scrollHeight;
 
-    // Success% (coarse): consider 'escalate' as not successful; 'retry' eventually success-ish
-    const escalations = decisions.filter(d => (d.action || '').toLowerCase().includes('escalate')).length;
-    const successPct = failed === 0 ? 100 : Math.round(100 * (failed - escalations) / failed);
+                chatInput.value = '';
 
-    // MTTR (very rough): if decisions carry createdAt and a resolvedAt later, compute; else show “—”
-    const mttr = '—'; // wire to your durable status history later
+                // Call the chat API
+                try {
+                    const apiBaseUrl = window.location.origin;
+                    const response = await fetch(`${apiBaseUrl}/chat`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: userMessage })
+                    });
+                    const data = await response.json();
+                    
+                    // Display agent response
+                    const agentMsgDiv = document.createElement('div');
+                    agentMsgDiv.className = 'flex';
+                    agentMsgDiv.innerHTML = `<div class="agent-message">${data.reply}</div>`;
+                    chatWindow.appendChild(agentMsgDiv);
+                    chatWindow.scrollTop = chatWindow.scrollHeight;
+                } catch (error) {
+                    const errorMsgDiv = document.createElement('div');
+                    errorMsgDiv.className = 'flex';
+                    errorMsgDiv.innerHTML = `<div class="agent-message text-red-500">Error: Could not connect to the agent.</div>`;
+                    chatWindow.appendChild(errorMsgDiv);
+                    chatWindow.scrollTop = chatWindow.scrollHeight;
+                }
+            });
 
-    // Open alerts (placeholder): escalations ~= open incident
-    const openAlerts = escalations;
+            // Load initial data for dashboard and pipelines
+            loadDashboardData();
+            loadFeed();
 
-    return { failed, successPct, mttr, openAlerts };
-  }
-
-  async function loadFailuresAndKpis() {
-    const rsp = await fetch('/api/sre/last-decisions?limit=100');
-    const json = await rsp.json();
-    const items = json.items || [];
-
-    // Chart: Types of failure
-    const agg = aggregateFailures(items);
-    if (failuresChart) failuresChart.destroy();
-    failuresChart = new Chart(failuresChartEl, {
-      type: 'bar',
-      data: {
-        labels: agg.labels.map(x => {
-          if (x === 'filenotfound') return 'File not found';
-          return x[0].toUpperCase() + x.slice(1);
-        }),
-        datasets: [{ label: 'Count', data: agg.counts, backgroundColor: 'rgba(59, 130, 246, 0.9)' }]
-      },
-      options: { responsive: true, scales: { y: { beginAtZero: true, ticks: { precision:0 } } } }
-    });
-
-    // KPIs (derived from recent SRE)
-    const k = computeKpis(items);
-    document.getElementById('kpi-failed').textContent   = String(k.failed);
-    document.getElementById('kpi-success').textContent  = `${k.successPct}%`;
-    document.getElementById('kpi-mttr').textContent     = k.mttr;
-    document.getElementById('kpi-alerts').textContent   = String(k.openAlerts);
-  }
-
-  // Initial load
-  loadProducts().catch(console.error);
-  loadFailuresAndKpis().catch(console.error);
-
-  // Refresh every 60s
-  setInterval(() => {
-    loadProducts().catch(console.error);
-    loadFailuresAndKpis().catch(console.error);
-  }, 60000);
-</script>
+            // Auto-refresh for pipeline feed
+            setInterval(loadFeed, 10000);
+        });
+    </script>
 </body>
 </html>
