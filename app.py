@@ -9,7 +9,7 @@ from openai import AzureOpenAI
 from utils.auth import functions_auth_headers
 from utils.storage import save_message, save_decision
 from utils.functions_client import start_sre_triage, agent_info_request
-from utils.storage import list_decisions  # snippet below
+from utils.storage import list_decisions,list_api_logs  # snippet below
 from azure.identity import DefaultAzureCredential
 from azure.core.exceptions import AzureError
 from azure.mgmt.resourcegraph import ResourceGraphClient
@@ -435,6 +435,11 @@ def get_status(instance_id: string):
     with httpx.Client(timeout=20) as c:
         r = c.get(url, params=params, headers=functions_auth_headers("sre"))
         return (r.text, r.status_code, {"Content-Type": r.headers.get("Content-Type", "application/json")})
+@app.get("/api/logs/actions")
+def api_logs_actions():
+    top = int(request.args.get("top", 50))
+    items = list_api_logs(top=top)
+    return jsonify({"items": items})
 
 # ============================================================================ #
 #         Minimal chat stub                                                    #

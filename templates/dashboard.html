@@ -46,6 +46,7 @@
                 <a href="#pipelines" id="nav-pipelines" class="text-gray-700 hover:text-blue-600 font-medium border-b-2 border-transparent">PIPELINES</a>
                 <a href="#chat" id="nav-chat" class="text-gray-700 hover:text-blue-600 font-medium border-b-2 border-transparent">CHATBOT</a>
                 <a href="#architecture" id="nav-architecture" class="text-gray-700 hover:text-blue-600 font-medium border-b-2 border-transparent">ARCHITECTURE</a>
+                <a href="#logs" id="nav-logs" class="text-gray-700 hover:text-blue-600 font-medium border-b-2 border-transparent">LOGS</a>
             </nav>
         </div>
 
@@ -191,6 +192,33 @@
                 </div>
             </div>
 
+            <!-- Logs Tab -->
+            <div id="tab-logs" class="tab-pane">
+                <div class="card bg-white rounded-lg shadow-sm">
+                    <div class="card-header p-6 flex justify-between items-center">
+                        <h3 class="text-xl font-semibold">API Logs</h3>
+                        <button onclick="loadLogs()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">Refresh</button>
+                    </div>
+                    <div class="card-body p-6">
+                        <div class="overflow-x-auto">
+                            <table id="api-logs-table" class="min-w-full divide-y divide-gray-200">
+                                <thead>
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Endpoint</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Method</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status Code</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration (ms)</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                        <div id="emptyLogsState" class="mt-4 text-center text-gray-500" style="display:none;">No API logs yet.</div>
+                    </div>
+                </div>
+            </div>
+
         </div>
     </div>
 
@@ -200,14 +228,16 @@
                 dashboard: document.getElementById('tab-dashboard'),
                 pipelines: document.getElementById('tab-pipelines'),
                 chat: document.getElementById('tab-chat'),
-                architecture: document.getElementById('tab-architecture')
+                architecture: document.getElementById('tab-architecture'),
+                logs: document.getElementById('tab-logs')
             };
 
             const navs = {
                 dashboard: document.getElementById('nav-dashboard'),
                 pipelines: document.getElementById('nav-pipelines'),
                 chat: document.getElementById('nav-chat'),
-                architecture: document.getElementById('nav-architecture')
+                architecture: document.getElementById('nav-architecture'),
+                logs: document.getElementById('nav-logs')
             };
 
             function activateTab(tabName) {
@@ -272,13 +302,19 @@
                     })
                     .catch(e => console.error("Could not fetch dashboard data:", e));
             }
-
             // Fetch and populate pipelines data
             async function loadFeed() {
                 const apiBaseUrl = window.location.origin;
                 const pipeline = document.getElementById('pipelineFilter').value.trim();
                 const q = pipeline ? ('?pipeline=' + encodeURIComponent(pipeline)) : '';
                 const res = await fetch(`${apiBaseUrl}/api/sre/actions` + q);
+                
+                if (!res.ok) {
+                    document.getElementById('emptyState').style.display = 'block';
+                    console.error(`HTTP error! status: ${res.status}`);
+                    return;
+                }
+                
                 const items = await res.json();
                 
                 const tbody = document.querySelector('#pipelineFeed tbody');
@@ -304,6 +340,40 @@
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" title="${why}">${why}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${it.run_id || ''}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${statusUrl ? `<a href="${statusUrl}" target="_blank" class="text-blue-600 hover:text-blue-800">status</a>` : ''}</td>
+                    `;
+                    tbody.appendChild(tr);
+                }
+            }
+            
+            // Fetch and populate API logs data
+            async function loadLogs() {
+                const apiBaseUrl = window.location.origin;
+                const res = await fetch(`${apiBaseUrl}/api/logs/actions`);
+
+                if (!res.ok) {
+                    document.getElementById('emptyLogsState').style.display = 'block';
+                    console.error(`HTTP error! status: ${res.status}`);
+                    return;
+                }
+
+                const data = await res.json();
+                const tbody = document.querySelector('#api-logs-table tbody');
+                tbody.innerHTML = '';
+
+                if (!data.items.length) {
+                    document.getElementById('emptyLogsState').style.display = 'block';
+                    return;
+                }
+                document.getElementById('emptyLogsState').style.display = 'none';
+
+                for (const log of data.items) {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${log.createdAt || ''}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${log.endpoint || ''}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${log.method || ''}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${log.statusCode || ''}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${log.durationMs ? log.durationMs.toFixed(2) : ''}</td>
                     `;
                     tbody.appendChild(tr);
                 }
@@ -356,9 +426,11 @@
             // Load initial data for dashboard and pipelines
             loadDashboardData();
             loadFeed();
+            loadLogs();
 
             // Auto-refresh for pipeline feed
             setInterval(loadFeed, 10000);
+            setInterval(loadLogs, 10000);
         });
     </script>
 </body>

@@ -1,101 +1,118 @@
 import os
 import uuid
 import datetime as dt
+import json
+import logging
 from azure.identity import DefaultAzureCredential
 from azure.data.tables import TableServiceClient
 
-ACCOUNT_URL = os.getenv("STORAGE_ACCOUNT_URL")
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+ACCOUNT_URL = (os.getenv("STORAGE_ACCOUNT_URL") or "").rstrip("/")
 TABLE_MESSAGES = os.getenv("TABLE_MESSAGES", "Messages")
 TABLE_DECISIONS = os.getenv("TABLE_DECISIONS", "AgentDecisions")
-
-_cred = DefaultAzureCredential(exclude_interactive_browser_credential=False)
-_table_clients = {}
+TABLE_API_LOGS = os.getenv("TABLE_API_LOGS", "ApiLogs")
 
 
-def _get_table_client(table_name: str):
-    """Lazily initialize and return a TableClient."""
-    if table_name not in _table_clients:
-        try:
-            svc = TableServiceClient(endpoint=ACCOUNT_URL, credential=_cred)
-            client = svc.get_table_client(table_name)
-            client.create_table()
-            _table_clients[table_name] = client
-        except Exception as e:
-            # You might want to log this error to a more persistent store
-            print(f"Error initializing table client for '{table_name}': {e}")
-            raise  # Re-raise to ensure app fails if tables can't be set up
-    return _table_clients[table_name]
+_cred = DefaultAzureCredential()
 
-def _table_client():
-    cred = DefaultAzureCredential()
-    svc  = TableServiceClient(account_url=ACCOUNT_URL, credential=cred)
-    return svc.get_table_client(TABLE_DECISIONS)
+# create service client (use endpoint, not account_url)
+if not ACCOUNT_URL:
+    raise RuntimeError("STORAGE_ACCOUNT_URL app setting is missing")
+_svc = TableServiceClient(endpoint=ACCOUNT_URL, credential=_cred)
 
-def save_message(conversation_id: str, role: str, content: str, tool_calls: str | None = None, ttl_days: int = 30):
+def _table(name: str):
+    """
+    Lazily create a table and return its client.
+    """
+    try:
+        _svc.create_table_if_not_exists(name)
+        return _svc.get_table_client(name)
+    except Exception as e:
+        logger.error(f"Error initializing table client for '{name}': {e}")
+        raise  # Re-raise to ensure app fails if tables can't be set up
+
+def save_message(conversation_id: str, role: str, text: str):
+    t = _table(TABLE_MESSAGES)
+    pk = conversation_id or "default"
+    rk = dt.datetime.utcnow().strftime("%Y%m%dT%H%M%S%fZ")
+    t.upsert_entity({"PartitionKey": pk, "RowKey": rk, "role": role, "text": text})
+    logger.info(f"Saved message to table '{TABLE_MESSAGES}' for conversation '{pk}'.")
+
+def save_decision(pipeline: str, payload: dict):
+    t = _table(TABLE_DECISIONS)
+    pk = pipeline or "unknown"
+    rk = dt.datetime.utcnow().strftime("%Y%m%dT%H%M%S%fZ")
+    t.upsert_entity({"PartitionKey": pk, "RowKey": rk, **payload})
+    logger.info(f"Saved decision to table '{TABLE_DECISIONS}' for pipeline '{pk}'.")
+
+def save_api_log(endpoint: str, method: str, status_code: int, duration_ms: float, payload: dict, response: dict):
+    t = _table(TABLE_API_LOGS)
+    pk = endpoint or "unknown"
+    rk = dt.datetime.utcnow().strftime("%Y%m%dT%H%M%S%fZ")
     entity = {
-        "PartitionKey": conversation_id,
-                "RowKey": str(uuid.uuid4()),
-        "role": role,
-        "content": content,
-        "toolCallsJson": tool_calls or "",
-        "createdAt": dt.datetime.utcnow().isoformat(),
-        "ttl": ttl_days * 86400,
+        "PartitionKey": pk,
+        "RowKey": rk,
+        "method": method,
+        "statusCode": status_code,
+        "durationMs": duration_ms,
+        "payloadJson": json.dumps(payload),
+        "responseJson": json.dumps(response),
     }
-    _messages.upsert_entity(entity)
-def save_decision(conversation_id: str, agent: str, category: str, action: str, attempt: int, context_json: str, ttl_days: int = 30):
-    decisions_client = _get_table_client(TABLE_DECISIONS)
-    entity = {
-        "PartitionKey": conversation_id,
-        "RowKey": str(uuid.uuid4()),
-        "agent": agent,
-        "category": category,
-        "action": action,
-        "attempt": attempt,
-        "contextJson": context_json,
-        "createdAt": dt.datetime.utcnow().isoformat(),
-        "ttl": ttl_days * 86400,
-    }
-    decisions_client.upsert_entity(entity)
+    t.upsert_entity(entity)
+    logger.info(f"Saved API log to table '{TABLE_API_LOGS}' for endpoint '{pk}'.")
 
 def list_decisions(pipeline: str | None, top: int = 50):
-    t = _table_client()
-    # No server-side order in Table Storage → fetch a page and sort locally by Timestamp/ts desc
+    t = _table(TABLE_DECISIONS)
     if pipeline:
-        query = f"PartitionKey eq '{pipeline}'"
-        pager = t.query_entities(query, results_per_page=top)
+        pager = t.query_entities(f"PartitionKey eq '{pipeline}'", results_per_page=top)
     else:
         pager = t.list_entities(results_per_page=top)
 
     items = []
-    for e in pager.by_page():            # first page only (top)
-        for ent in e:
-            items.append({
-                "ts": ent.get("ts") or str(ent.get("Timestamp")),
-                "pipeline_name": ent.get("PartitionKey"),
-                "factory": ent.get("factory"),
-                "category": ent.get("category"),
-                "action": ent.get("action"),
-                "status": ent.get("status"),
-                "why": ent.get("why"),
-                "run_id": ent.get("run_id"),
-                "expected_path": ent.get("expected_path"),
-                "instance_id": ent.get("instance_id"),
-            })
-        break
-    # Sort newest first
+    try:
+        for page in pager.by_page():
+            for e in page:
+                items.append({
+                    "ts": e.get("ts") or str(e.get("Timestamp")),
+                    "pipeline_name": e.get("PartitionKey"),
+                    "factory": e.get("factory"),
+                    "category": e.get("category"),
+                    "action": e.get("action"),
+                    "status": e.get("status"),
+                    "why": e.get("why"),
+                    "run_id": e.get("run_id"),
+                    "expected_path": e.get("expected_path"),
+                    "instance_id": e.get("instance_id"),
+                })
+            break
+    except Exception as ex:
+        logger.error(f"[TABLES] Query error: {ex}")
+    
     items.sort(key=lambda x: x.get("ts",""), reverse=True)
     return items[:top]
 
-#_svc = TableServiceClient(endpoint=ACCOUNT_URL, credential=_cred)
-#_messages = _svc.get_table_client(TABLE_MESSAGES)
-#_decisions = _svc.get_table_client(TABLE_DECISIONS)
-
-# Ensure tables exist (no-op if already there)
-#try:
-#    _messages.create_table()
-#except Exception:
-#    pass
-#try:
-#    _decisions.create_table()
-#except Exception:
-#    pass
+def list_api_logs(top: int = 50):
+    t = _table(TABLE_API_LOGS)
+    pager = t.list_entities(results_per_page=top)
+    items = []
+    try:
+        for page in pager.by_page():
+            for ent in page:
+                items.append({
+                    "createdAt": ent.get("createdAt") or str(ent.get("Timestamp")),
+                    "endpoint": ent.get("PartitionKey"),
+                    "method": ent.get("method"),
+                    "statusCode": ent.get("statusCode"),
+                    "durationMs": ent.get("durationMs"),
+                    "payload": ent.get("payloadJson"),
+                    "response": ent.get("responseJson"),
+                })
+            break
+    except Exception as ex:
+        logger.error(f"[TABLES] Query error: {ex}")
+    
+    items.sort(key=lambda x: x.get("createdAt",""), reverse=True)
+    return items[:top]
