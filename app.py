@@ -32,14 +32,14 @@ AOAI_API_VERSION = os.getenv("AOAI_API_VERSION", "2024-02-15-preview")
 AOAI_API_KEY     = os.getenv("AOAI_API_KEY")  # optional; if absent, code uses MSI/AAD
 
 # Optional: secure webhook signature (Action Group "Enable secure webhook")
-ALERTS_HMAC_SECRET = os.getenv("ALERTS_HMAC_SECRET")  # if set, verify x-ms-signature (not implemented here by default)
+#ALERTS_HMAC_SECRET = os.getenv("ALERTS_HMAC_SECRET")  # if set, verify x-ms-signature (not implemented here by default)
 
 # Template dir: prefer mounted dir if it actually has dashboard.html; else use packaged templates
 MOUNT_DIR    = os.getenv("TEMPLATE_DIR", "/mnt/templates")
 DEFAULT_DIR = str(Path(__file__).parent / "templates")
 TEMPLATE_CANDIDATE = MOUNT_DIR if Path(MOUNT_DIR, "dashboard.html").exists() else DEFAULT_DIR
 
-app = Flask(__name__, template_folder=TEMPLATE_CANDIDATE, static_folder="static")
+app = Flask(__name__)
 # app.config["TEMPLATES_AUTO_RELOAD"] = True
 # app.jinja_env.auto_reload = True
 
@@ -196,7 +196,10 @@ def _classify_with_aoai(alert: dict, triage_ctx: dict) -> dict:
 def handle_adf_alert():
     """Action Group webhook target. Parses Common Alert Schema, classifies with AOAI, then
         either calls Agent-SRE (retryable/FileNotFound) or accepts for notification."""
+    print("I am alerted before")
     alert = request.get_json(force=True, silent=True) or {}
+    print("I am alerted after {}".format(alert))
+
     schema_id = str(alert.get("schemaId", ""))
 
     # 1) Parse alert to triage context
