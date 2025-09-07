@@ -201,6 +201,7 @@ def _classify_with_aoai(alert: dict, triage_ctx: dict) -> dict:
 def handle_adf_alert():
     """Action Group webhook target. Parses Common Alert Schema, classifies with AOAI, then
        either calls Agent-SRE (retryable/FileNotFound) or accepts for notification."""
+    print("Starting to handle alert")
     alert = request.get_json(force=True, silent=True) or {}
     print("[/alerts/adf] schemaId:", alert.get("schemaId"))
 
