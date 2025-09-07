@@ -58,15 +58,30 @@ _ID_RE = re.compile(
     r"^/subscriptions/(?P<sub>[^/]+)/resourceGroups/(?P<rg>[^/]+)/providers/Microsoft\.DataFactory/factories/(?P<factory>[^/]+)$",
     re.IGNORECASE,
 )
+_SUB_ID_RE  = re.compile(r"^/subscriptions/(?P<sub>[^/]+)/", re.IGNORECASE)
 
 def _parse_adf_ids(alert: dict):
     ess = (alert.get("data") or {}).get("essentials") or {}
-    ids = ess.get("alertTargetIDs") or  or []
+    ids = ess.get("alertTargetIDs") or []
     rid = ids[0] if ids else ""
     m = _ID_RE.match(rid)
-    if not m:
-        return None, None, None
-    return m.group("sub"), m.group("rg"), m.group("factory")
+    if m:
+        return m.group("sub"), m.group("rg"), m.group("factory")
+        # Fallback: subscription from alertId, RG from targetResourceGroup, factory from configurationItems[0]
+    sub = None
+    am_alert_id = ess.get("alertId") or ""
+    m2 = _SUB_ID_RE.match(am_alert_id)
+    if m2:
+        sub = m2.group("sub")
+    rg = ess.get("targetResourceGroup")
+    factory = (ess.get("configurationItems") or [None])[0]
+
+    if sub and rg and factory:
+        return sub, rg, factory
+
+    # Give up
+    return None, None, None
+
 
 def _from_metric_alert(alert: dict):
     sub, rg, factory = _parse_adf_ids(alert)
