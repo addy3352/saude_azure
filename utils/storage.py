@@ -1,8 +1,9 @@
 import os
 import uuid
 import datetime as dt
-import json
+import json ,uuid
 import logging
+from azure.identity import DefaultAzureCredential, ManagedIdentityCredential, ChainedTokenCredential
 from azure.identity import DefaultAzureCredential
 from azure.data.tables import TableServiceClient
 
@@ -15,38 +16,45 @@ TABLE_MESSAGES = os.getenv("TABLE_MESSAGES", "Messages")
 TABLE_DECISIONS = os.getenv("TABLE_DECISIONS", "AgentDecisions")
 TABLE_API_LOGS = os.getenv("TABLE_API_LOGS", "ApiLogs")
 
+MAX_STR = 32000  # stay well under Table Storage per-property limits
 
-_cred = DefaultAzureCredential()
+
+_cred = ChainedTokenCredential(
+    ManagedIdentityCredential(),
+    DefaultAzureCredential(exclude_shared_token_cache_credential=True),
+)
 
 # create service client (use endpoint, not account_url)
 if not ACCOUNT_URL:
     raise RuntimeError("STORAGE_ACCOUNT_URL app setting is missing")
-_svc = TableServiceClient(endpoint=ACCOUNT_URL, credential=_cred)
 
-def _table(name: str):
-    """
-    Lazily create a table and return its client.
-    """
-    try:
-        _svc.create_table_if_not_exists(name)
-        return _svc.get_table_client(name)
-    except Exception as e:
-        logger.error(f"Error initializing table client for '{name}': {e}")
-        raise  # Re-raise to ensure app fails if tables can't be set up
-import json, uuid, datetime as dt
-from typing import Optional, Dict, Any, List
-from azure.identity import DefaultAzureCredential, ManagedIdentityCredential, ChainedTokenCredential
-from azure.data.tables import TableServiceClient
+
+def _svc() -> TableServiceClient:
+    # IMPORTANT: azure-data-tables 12.x uses 'endpoint=' not 'account_url='
+    return TableServiceClient(endpoint=ACCOUNT_URL, credential=_cred)
+
 
 # ...existing constants/credential...
 
-MAX_STR = 32000  # stay well under Table Storage per-property limits
 
-def _svc() -> TableServiceClient:
-    return TableServiceClient(endpoint=ACCOUNT_URL, credential=_cred)
 
 def _now_iso() -> str:
     return dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+
+
+def _table(name: str):
+    try:
+        svc = _svc()
+        try:
+            svc.create_table_if_not_exists(name)
+        except ResourceExistsError:
+            pass
+        return svc.get_table_client(name)
+    except Exception as ex:
+        logger.error(f"Error initializing table client for '{name}': {ex}")
+        raise
+
+
 
 def save_decision(
     *,
@@ -132,45 +140,27 @@ def save_message(conversation_id: str, role: str, text: str):
     logger.info(f"Saved message to table '{TABLE_MESSAGES}' for conversation '{pk}'.")
 
 
-
-
-def save_api_log(endpoint: str, method: str, status_code: int, duration_ms: float, payload: dict, response: dict):
+def save_api_log(endpoint: str, method: str, status_code: int, duration_ms: Optional[int]):
     t = _table(TABLE_API_LOGS)
-    pk = endpoint or "unknown"
-    rk = dt.datetime.utcnow().strftime("%Y%m%dT%H%M%S%fZ")
-    entity = {
-        "PartitionKey": pk,
-        "RowKey": rk,
+    t.upsert_entity({
+        "PartitionKey": "apilog",
+        "RowKey": uuid.uuid4().hex,
+        "createdAt": _now_iso(),
+        "endpoint": endpoint[:512],
         "method": method,
-        "statusCode": status_code,
-        "durationMs": duration_ms,
-        "payloadJson": json.dumps(payload),
-        "responseJson": json.dumps(response),
-    }
-    t.upsert_entity(entity)
-    logger.info(f"Saved API log to table '{TABLE_API_LOGS}' for endpoint '{pk}'.")
+        "statusCode": int(status_code),
+        "durationMs": int(duration_ms) if duration_ms is not None else None,
+    })
 
-
-
-def list_api_logs(top: int = 50):
+def list_api_logs(top: int = 50) -> List[Dict[str, Any]]:
     t = _table(TABLE_API_LOGS)
-    pager = t.list_entities(results_per_page=top)
-    items = []
-    try:
-        for page in pager.by_page():
-            for ent in page:
-                items.append({
-                    "createdAt": ent.get("createdAt") or str(ent.get("Timestamp")),
-                    "endpoint": ent.get("PartitionKey"),
-                    "method": ent.get("method"),
-                    "statusCode": ent.get("statusCode"),
-                    "durationMs": ent.get("durationMs"),
-                    "payload": ent.get("payloadJson"),
-                    "response": ent.get("responseJson"),
-                })
-            break
-    except Exception as ex:
-        logger.error(f"[TABLES] Query error: {ex}")
-    
-    items.sort(key=lambda x: x.get("createdAt",""), reverse=True)
-    return items[:top]
+    rows = list(t.list_entities())  # simple; client-side sort
+    rows.sort(key=lambda e: e.get("createdAt", ""), reverse=True)
+    return [{
+        "createdAt": e.get("createdAt"),
+        "endpoint": e.get("endpoint"),
+        "method": e.get("method"),
+        "statusCode": e.get("statusCode"),
+        "durationMs": e.get("durationMs"),
+    } for e in rows[:top]]
+
