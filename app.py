@@ -53,44 +53,47 @@ if not (AGENT_INFO_FUNC_URL and AGENT_INFO_FUNC_URL.startswith("http")):
 #        Azure Monitor -> Webhook                                              #
 # ============================================================================ #
 
-def _parse_resource_id(rid: str) -> dict:
-    """Extract subscription, RG, factory from a resourceId."""
-    try:
-        parts = rid.strip("/").split("/")
-        low = [p.lower() for p in parts]
-        def get(seg):
-            return parts[low.index(seg)+1] if seg in low else None
-        return {
-            "subscription_id": get("subscriptions"),
-            "resource_group":  get("resourcegroups"),
-            "factory_name":    get("factories"),
-        }
-    except Exception:
-        return {"subscription_id": None, "resource_group": None, "factory_name": None}
+# ---------- helpers ----------
+_ID_RE = re.compile(
+    r"^/subscriptions/(?P<sub>[^/]+)/resourceGroups/(?P<rg>[^/]+)/providers/Microsoft\.DataFactory/factories/(?P<factory>[^/]+)$",
+    re.IGNORECASE,
+)
 
-def _from_metric_alert(payload: dict) -> dict | None:
-    """Metric alert: e.g., PipelineFailedRuns > 0."""
-    ctx = payload.get("data", {}).get("alertContext", {})
-    conds = ctx.get("condition", {}).get("allOf", [])
-    pipeline = None
-    metric   = None
-    for c in conds:
-        metric = metric or c.get("metricName")
-        for d in c.get("dimensions", []):
-            if d.get("name", "").lower() in ("pipelinename", "pipeline", "pipeline name"):
-                pipeline = d.get("value")
-    essentials = payload.get("data", {}).get("essentials", {})
-    targets = essentials.get("alertTargetIDs") or []
-    ids = _parse_resource_id(targets[0]) if targets else {}
-    if not pipeline and not ids:
+def _parse_adf_ids(alert: dict):
+    ess = (alert.get("data") or {}).get("essentials") or {}
+    ids = ess.get("alertTargetIDs") or ess.get("configurationItems") or []
+    rid = ids[0] if ids else ""
+    m = _ID_RE.match(rid)
+    if not m:
+        return None, None, None
+    return m.group("sub"), m.group("rg"), m.group("factory")
+
+def _from_metric_alert(alert: dict):
+    sub, rg, factory = _parse_adf_ids(alert)
+    if not (sub and rg and factory):
         return None
+
+    ctx = (((alert.get("data") or {}).get("alertContext") or {}).get("condition") or {})
+    allOf = ctx.get("allOf") or []
+    pipeline = None
+    for cond in allOf:
+        for d in cond.get("dimensions") or []:
+            n = (d.get("name") or "").lower()
+            if n in ("pipelinename", "name"):
+                pipeline = d.get("value")
+                break
+        if pipeline:
+            break
+
+    if not pipeline:
+        return None
+
     return {
-        **ids,
+        "subscription_id": sub,
+        "resource_group": rg,
+        "factory_name": factory,
         "pipeline_name": pipeline,
-        "run_id": None,      # metric alerts don't include it
-        "metric": metric,
-        "alert_rule": essentials.get("alertRule"),
-        "severity": essentials.get("severity"),
+        "run_id": None,               # not in metric alerts; orchestrator/LA should enrich
     }
 
 def _from_kql_alert(payload: dict) -> dict | None:
@@ -192,57 +195,61 @@ def _classify_with_aoai(alert: dict, triage_ctx: dict) -> dict:
         print(f"[AOAI] classify error: {ex}")
         return _heuristic(triage_ctx, alert)
 
+
+# ---------- FIXED HANDLER ----------
 @app.post("/alerts/adf")
 def handle_adf_alert():
     """Action Group webhook target. Parses Common Alert Schema, classifies with AOAI, then
-        either calls Agent-SRE (retryable/FileNotFound) or accepts for notification."""
-    print("I am alerted before")
+       either calls Agent-SRE (retryable/FileNotFound) or accepts for notification."""
     alert = request.get_json(force=True, silent=True) or {}
-    print("I am alerted after {}".format(alert))
+    print("[/alerts/adf] schemaId:", alert.get("schemaId"))
 
-    schema_id = str(alert.get("schemaId", ""))
+    # Determine alert flavor robustly (ignore schemaId)
+    ess = (alert.get("data") or {}).get("essentials") or {}
+    signal = (ess.get("signalType") or "").lower()  # "metric" | "log" | etc.
 
-    # 1) Parse alert to triage context
     triage_ctx = None
-    if schema_id.startswith("AzureMonitorMetric"):
+    if signal == "metric":
         triage_ctx = _from_metric_alert(alert)
-    elif schema_id.startswith("AzureMonitor"):
-        triage_ctx = _from_kql_alert(alert) or _from_metric_alert(alert)
-    else:
-        # accept compact client payloads too
-        if "pipeline_name" in alert or "pipelineName" in alert:
-            triage_ctx = {
-                "subscription_id": alert.get("subscription_id"),
-                "resource_group":  alert.get("resource_group"),
-                "factory_name":    alert.get("factory_name"),
-                "pipeline_name":   alert.get("pipeline_name") or alert.get("pipelineName"),
-                "run_id":          alert.get("run_id") or alert.get("runId"),
-            }
+    elif signal == "log":
+        triage_ctx = _from_kql_alert(alert)
+    # accept compact manual payloads too
+    if not triage_ctx and ("pipeline_name" in alert or "pipelineName" in alert):
+        triage_ctx = {
+            "subscription_id": alert.get("subscription_id"),
+            "resource_group":  alert.get("resource_group"),
+            "factory_name":    alert.get("factory_name"),
+            "pipeline_name":   alert.get("pipeline_name") or alert.get("pipelineName"),
+            "run_id":          alert.get("run_id") or alert.get("runId"),
+        }
 
     if not triage_ctx:
-        # Return 202 so Azure Monitor doesn't keep retrying
+        print("[/alerts/adf] Unrecognized shape; returning 202.")
         return jsonify({"status": "accepted", "note": "Unrecognized alert shape"}), 202
 
-    # 2) AOAI classification (with heuristic fallback)
-    classification = _classify_with_aoai(alert, triage_ctx)
+    # AOAI classification (with fallback)
+    try:
+        classification = _classify_with_aoai(alert, triage_ctx)
+    except Exception as ex:
+        print(f"AOAI classify error: {ex}")
+        classification = {"category": "Other", "retryable": False, "expected_path": None, "why": "classifier error"}
 
-    # 3) Persist decision (don't let storage issues break the webhook)
+    # Persist initial decision (don’t fail webhook if storage/RBAC has issues)
     try:
         save_decision(
-            conversation_id=triage_ctx.get("run_id", "unknown"),
+            conversation_id=triage_ctx.get("run_id") or "unknown",
             agent="sre",
             category=classification.get("category"),
             action="classified",
             attempt=0,
-            context_json=json.dumps({"alert": alert, "context": triage_ctx}),
-            ttl_days=30
+            context_json=json.dumps({"alert": alert, "context": triage_ctx, "classification": classification}),
+            ttl_days=30,
         )
     except Exception as ex:
         print(f"[WARN] save_decision failed: {ex}")
 
-    # 4) Route to Agent-SRE if retryable or FileNotFound; else accept (notification-only)
+    # Decide routing
     go_to_sre = bool(classification.get("retryable")) or classification.get("category") == "FileNotFound"
-
     if go_to_sre:
         triage_event = {
             "source": "azure-monitor",
@@ -256,14 +263,18 @@ def handle_adf_alert():
             "raw": alert,
         }
         try:
-            result = start_sre_triage(triage_event)  # your helper posts to AGENT_SRE_FUNC_URL
-            return jsonify({"status": "queued", "route": "agent-sre", "result": result, "classification": classification}), 202
+            print("[/alerts/adf] posting to Agent-SRE…")
+            result = start_sre_triage(triage_event)
+            print(f"[/alerts/adf] Agent-SRE accepted: {result}")
+            return jsonify({"status": "queued", "route": "agent-sre", "result": result}), 202
         except Exception as ex:
-            # still 202 so the Alert pipeline doesn't hammer retries
-            return jsonify({"status": "accepted", "route": "agent-sre", "forwardError": str(ex), "classification": classification}), 202
-    else:
-        # Non-retryable -> notification path (Teams/email via Action Group/Logic App handled elsewhere)
-        return jsonify({"status": "accepted", "route": "notify", "classification": classification}), 202
+            print(f"[/alerts/adf] Agent-SRE forward error: {ex}")
+            return jsonify({"status": "accepted", "route": "agent-sre", "forwardError": str(ex)}), 202
+
+    # Non-retryable → notify (Teams/Email handled by your Action Group/Logic App)
+    print("[/alerts/adf] non-retryable; notifying only.")
+    return jsonify({"status": "accepted", "route": "notify", "classification": classification}), 202
+
 
 # ============================================================================ #
 #         Proxy / Utility APIs                                                 #
