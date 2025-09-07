@@ -61,58 +61,64 @@ _ID_RE = re.compile(
 _SUB_ID_RE  = re.compile(r"^/subscriptions/(?P<sub>[^/]+)/", re.IGNORECASE)
 
 
+# --- Metric alert parser (ADF PipelineFailedRuns) ---
+def _parse_resource_id(rid: str) -> dict:
+    out = {"subscription_id": None, "resource_group": None, "factory_name": None}
+    if not rid:
+        return out
+    parts = rid.strip("/").split("/")
+    for i, p in enumerate(parts):
+        pl = p.lower()
+        if pl == "subscriptions" and i + 1 < len(parts):
+            out["subscription_id"] = parts[i + 1]
+        elif pl == "resourcegroups" and i + 1 < len(parts):
+            out["resource_group"] = parts[i + 1]
+        elif pl == "factories" and i + 1 < len(parts):
+            out["factory_name"] = parts[i + 1]
+    return out
 
+def _from_metric_alert(alert: dict) -> dict | None:
+    """Azure Monitor Common Alert Schema for Metric alerts (ADF PipelineFailedRuns)."""
+    data = alert.get("data") or {}
+    ess  = data.get("essentials") or {}
+    ctx  = data.get("alertContext") or {}
+    cond = ctx.get("condition") or {}
+    allof = cond.get("allOf") or []
 
-def _parse_adf_ids(alert: dict):
-    ess = (alert.get("data") or {}).get("essentials") or {}
-    ids = ess.get("alertTargetIDs") or []
-    rid = ids[0] if ids else ""
-    m = _ID_RE.match(rid)
-    if m:
-        return m.group("sub"), m.group("rg"), m.group("factory")
-        # Fallback: subscription from alertId, RG from targetResourceGroup, factory from configurationItems[0]
-    sub = None
-    am_alert_id = ess.get("alertId") or ""
-    m2 = _SUB_ID_RE.match(am_alert_id)
-    if m2:
-        sub = m2.group("sub")
-    rg = ess.get("targetResourceGroup")
-    factory = (ess.get("configurationItems") or [None])[0]
-
-    if sub and rg and factory:
-        return sub, rg, factory
-
-    # Give up
-    return None, None, None
-
-
-def _from_metric_alert(alert: dict):
-    sub, rg, factory = _parse_adf_ids(alert)
-    if not (sub and rg and factory):
-        return None
-
-    ctx = (((alert.get("data") or {}).get("alertContext") or {}).get("condition") or {})
-    allOf = ctx.get("allOf") or []
-    pipeline = None
-    for cond in allOf:
-        for d in cond.get("dimensions") or []:
-            n = (d.get("name") or "").lower()
-            if n in ("pipelinename", "name"):
-                pipeline = d.get("value")
+    # Pipeline name dimension (often "Name")
+    pipeline_name = None
+    for crit in allof:
+        for d in (crit.get("dimensions") or []):
+            nm = (d.get("name") or "").strip().lower()
+            if nm in ("name", "pipelinename", "pipeline"):
+                pipeline_name = d.get("value") or (d.get("values")[0] if d.get("values") else None)
                 break
-        if pipeline:
+        if pipeline_name:
             break
+    if not pipeline_name:
+        app.logger.warning("[_from_metric_alert] Could not find pipeline Name dimension.")
+        # still return a context so we can log & see it in UI
+        pipeline_name = "unknown"
 
-    if not pipeline:
-        return None
+    # Resource IDs → sub/rg/factory
+    rid   = (ess.get("alertTargetIDs") or [None])[0] or ess.get("alertRuleID")
+    idbag = _parse_resource_id(rid or "")
 
-    return {
-        "subscription_id": sub,
-        "resource_group": rg,
-        "factory_name": factory,
-        "pipeline_name": pipeline,
-        "run_id": None,               # not in metric alerts; orchestrator/LA should enrich
+    subscription_id = idbag["subscription_id"]
+    resource_group  = idbag["resource_group"] or ess.get("targetResourceGroup")
+    factory_name    = idbag["factory_name"] or (ess.get("configurationItems") or [None])[0]
+
+    ctx_out = {
+        "subscription_id": subscription_id,
+        "resource_group":  resource_group,
+        "factory_name":    factory_name,
+        "pipeline_name":   pipeline_name,
+        # Metric alerts don’t include RunId; SRE can still act without it
+        "run_id":          None,
     }
+    app.logger.info(f"[_from_metric_alert] parsed: {ctx_out}")
+    return ctx_out
+
 
 
 def _signal_type(alert: dict) -> str:
