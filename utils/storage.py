@@ -29,9 +29,14 @@ if not ACCOUNT_URL:
     raise RuntimeError("STORAGE_ACCOUNT_URL app setting is missing")
 
 
-def _svc() -> TableServiceClient:
-    # IMPORTANT: azure-data-tables 12.x uses 'endpoint=' not 'account_url='
+def get_table_service() -> TableServiceClient:
+    # Name avoids any clash with previous _svc variable/function
     return TableServiceClient(endpoint=ACCOUNT_URL, credential=_cred)
+
+
+
+
+
 
 
 # ...existing constants/credential...
@@ -44,7 +49,7 @@ def _now_iso() -> str:
 
 def _table(name: str):
     try:
-        svc = _svc()
+        svc = get_table_service()
         try:
             svc.create_table_if_not_exists(name)
         except ResourceExistsError:
@@ -80,7 +85,7 @@ def save_decision(
         except Exception:
             payload_json = str(payload)
 
-    svc = _svc()
+    svc = get_table_service()
     svc.create_table_if_not_exists(TABLE_DECISIONS)
     t = svc.get_table_client(TABLE_DECISIONS)
 
@@ -104,8 +109,7 @@ def save_decision(
     t.upsert_entity(row)
 
 def list_decisions(pipeline: Optional[str] = None, top: int = 50) -> List[Dict[str, Any]]:
-    from itertools import islice
-    svc = _svc()
+    svc = get_table_service()
     svc.create_table_if_not_exists(TABLE_DECISIONS)
     t = svc.get_table_client(TABLE_DECISIONS)
 
@@ -141,7 +145,7 @@ def save_message(conversation_id: str, role: str, text: str):
 
 
 def save_api_log(endpoint: str, method: str, status_code: int, duration_ms: Optional[int]):
-    t = _table(TABLE_API_LOGS)
+    t = get_table(TABLE_API_LOGS)
     t.upsert_entity({
         "PartitionKey": "apilog",
         "RowKey": uuid.uuid4().hex,
@@ -153,7 +157,7 @@ def save_api_log(endpoint: str, method: str, status_code: int, duration_ms: Opti
     })
 
 def list_api_logs(top: int = 50) -> List[Dict[str, Any]]:
-    t = _table(TABLE_API_LOGS)
+    t = get_table(TABLE_API_LOGS)
     rows = list(t.list_entities())  # simple; client-side sort
     rows.sort(key=lambda e: e.get("createdAt", ""), reverse=True)
     return [{
