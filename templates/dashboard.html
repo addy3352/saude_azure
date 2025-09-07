@@ -328,7 +328,7 @@
             
                 for (const it of items) {
                     const tr = document.createElement('tr');
-                    const statusUrl = it.instance_id ? `/status/${it.instance_id}` : null;
+                    const statusUrl = it.instance_id ? `${apiBaseUrl}/status/${it.instance_id}` : null;
                     const why = it.context ? (JSON.parse(it.context).why || '').slice(0, 80) : '';
 
                     tr.innerHTML = `
