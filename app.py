@@ -60,6 +60,9 @@ _ID_RE = re.compile(
 )
 _SUB_ID_RE  = re.compile(r"^/subscriptions/(?P<sub>[^/]+)/", re.IGNORECASE)
 
+
+
+
 def _parse_adf_ids(alert: dict):
     ess = (alert.get("data") or {}).get("essentials") or {}
     ids = ess.get("alertTargetIDs") or []
@@ -110,6 +113,29 @@ def _from_metric_alert(alert: dict):
         "pipeline_name": pipeline,
         "run_id": None,               # not in metric alerts; orchestrator/LA should enrich
     }
+
+
+def _signal_type(alert: dict) -> str:
+    """Return 'metric' | 'log' | 'activitylog' | 'unknown'."""
+    data = alert.get("data") or {}
+    ess  = data.get("essentials") or {}
+    sig  = (ess.get("signalType") or "").strip().lower()
+    if sig:
+        return sig  # 'metric', 'log', 'activitylog', 'platform', etc.
+
+    # Fallbacks if some senders drop signalType but keep schemaId/shape:
+    schema = (alert.get("schemaId") or "").lower()
+    if "azuremonitorcommonalertschema" in schema:
+        # Heuristic: Metric CAS usually has alertContext.condition.allOf[*].dimensions
+        ctx = data.get("alertContext") or {}
+        cond = ctx.get("condition") or {}
+        if cond.get("allOf"):
+            return "metric"
+        return "log"  # default to log if unsure inside AzureMonitor CAS
+
+    # Compact/manual posts (no CAS): we can’t tell; let downstream try
+    return "unknown"
+
 
 def _from_kql_alert(payload: dict) -> dict | None:
     """Scheduled query (Log Analytics) alert, often includes RunId, PipelineName."""
@@ -220,49 +246,64 @@ def handle_adf_alert():
     alert = request.get_json(force=True, silent=True) or {}
     print("[/alerts/adf] schemaId:", alert.get("schemaId"))
     # Determine alert flavor robustly (ignore schemaId)
-    ess = (alert.get("data") or {}).get("essentials") or {}
-    signal = (ess.get("signalType") or "").lower()  # "metric" | "log" | etc.
-    print("[/alerts/adf] signalType:", signal)
+    sig = _signal_type(alert)
+    app.logger.info(f"[/alerts/adf] signalType: {sig}")
+    print("[/alerts/adf] signalType:", sig)
     triage_ctx = None
-    if signal == "metric":
+    if sig == "metric":
         triage_ctx = _from_metric_alert(alert)
-    elif signal == "log":
+    elif sig == ("log","platform"):
         triage_ctx = _from_kql_alert(alert)
+    elif sig == "activitylog":
+        # If you later support Activity Log alerts explicitly, parse here.
+        triage_ctx = _from_kql_alert(alert)  # reuse until you add a dedicated parser
+    else:
+        # Accept compact client/test payloads too
+        if ("pipeline_name" in alert) or ("pipelineName" in alert):
+            triage_ctx = {
+                "subscription_id": alert.get("subscription_id"),
+                "resource_group":  alert.get("resource_group"),
+                "factory_name":    alert.get("factory_name"),
+                "pipeline_name":   alert.get("pipeline_name") or alert.get("pipelineName"),
+                "run_id":          alert.get("run_id") or alert.get("runId"),
+            }
     # accept compact manual payloads too
-    if not triage_ctx and ("pipeline_name" in alert or "pipelineName" in alert):
-        triage_ctx = {
-            "subscription_id": alert.get("subscription_id"),
-            "resource_group":  alert.get("resource_group"),
-            "factory_name":    alert.get("factory_name"),
-            "pipeline_name":   alert.get("pipeline_name") or alert.get("pipelineName"),
-            "run_id":          alert.get("run_id") or alert.get("runId"),
-        }
-
     if not triage_ctx:
-        print("[/alerts/adf] Unrecognized shape; returning 202.")
+        app.logger.info("[/alerts/adf] Unrecognized shape; returning 202.")        
+        try:
+            save_decision(
+                conversation_id="alert",
+                agent="sre",
+                category="Unknown",
+                action="ignored",
+                attempt=0,
+                pipeline_name="unknown",
+                why=f"unrecognized alert shape (signalType={sig})",
+                context_json=json.dumps({"alert": alert})[:32000],
+            )
+        except Exception as ex:
+            app.logger.warning(f"save_decision failed: {ex}")
         return jsonify({"status": "accepted", "note": "Unrecognized alert shape"}), 202
 
-    # AOAI classification (with fallback)
-    try:
-        classification = _classify_with_aoai(alert, triage_ctx)
-    except Exception as ex:
-        print(f"AOAI classify error: {ex}")
-        classification = {"category": "Other", "retryable": False, "expected_path": None, "why": "classifier error"}
+  
 
-    # Persist initial decision (don’t fail webhook if storage/RBAC has issues)
+    # AOAI classification (with fallback)
+    classification = _classify_with_aoai(alert, triage_ctx)
     try:
         save_decision(
-            conversation_id=triage_ctx.get("run_id", "unknown"),
+            conversation_id=triage_ctx.get("run_id") or triage_ctx.get("pipeline_name") or "unknown",
             agent="sre",
             category=classification.get("category"),
             action="classified",
             attempt=0,
-            context_json=json.dumps({"alert": alert, "context": triage_ctx, "classification": classification}),
-            ttl_days=30
+            pipeline_name=triage_ctx.get("pipeline_name"),
+            why=classification.get("why"),
+            context_json=json.dumps({"alert": alert, "context": triage_ctx})[:32000],
         )
     except Exception as ex:
-        print(f"[WARN] save_decision failed: {ex}")
-
+        app.logger.warning(f"save_decision failed: {ex}")   
+    print("classification done")
+    
     # Decide routing
     go_to_sre = bool(classification.get("retryable")) or classification.get("category") == "FileNotFound"
     if go_to_sre:
