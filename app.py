@@ -252,13 +252,13 @@ def handle_adf_alert():
     # Persist initial decision (don’t fail webhook if storage/RBAC has issues)
     try:
         save_decision(
-            conversation_id=triage_ctx.get("run_id") or "unknown",
+            conversation_id=triage_ctx.get("run_id", "unknown"),
             agent="sre",
             category=classification.get("category"),
             action="classified",
             attempt=0,
             context_json=json.dumps({"alert": alert, "context": triage_ctx, "classification": classification}),
-            ttl_days=30,
+            ttl_days=30
         )
     except Exception as ex:
         print(f"[WARN] save_decision failed: {ex}")
