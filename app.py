@@ -401,6 +401,7 @@ def api_sre_actions():
 
 @app.route("/")
 def dashboard():
+    print("I am home ")
     # data fetched client-side via your API routes
     return render_template("dashboard.html")
 
