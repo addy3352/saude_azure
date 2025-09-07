@@ -9,7 +9,7 @@ from openai import AzureOpenAI
 from utils.auth import functions_auth_headers
 from utils.storage import save_message, save_decision
 from utils.functions_client import start_sre_triage, agent_info_request
-from utils.storage import list_decisions,list_api_logs  # snippet below
+from utils.storage import list_decisions,list_api_logs,save_api_log  # snippet below
 from azure.identity import DefaultAzureCredential
 from azure.core.exceptions import AzureError
 from azure.mgmt.resourcegraph import ResourceGraphClient
@@ -417,16 +417,47 @@ def health():
 @app.post("/agent-sre/api/triage")
 def proxy_sre():
     payload = request.get_json(force=True)
-    with httpx.Client(timeout=60) as c:
-        r = c.post(AGENT_SRE_FUNC_URL, json=payload, headers=functions_auth_headers("sre"))
-        return (r.text, r.status_code, {"Content-Type": r.headers.get("Content-Type", "application/json")})
+    start_time = dt.datetime.utcnow()
+    try:
+        with httpx.Client(timeout=60) as c:
+            r = c.post(AGENT_SRE_FUNC_URL, json=payload, headers=functions_auth_headers("sre"))
+            end_time = dt.datetime.utcnow()
+            duration = (end_time - start_time).total_seconds() * 1000
+            save_api_log(endpoint="/agent-sre/api/triage", method="POST", status_code=r.status_code, duration_ms=duration, payload=payload, response=r.json())
+            return (r.text, r.status_code, {"Content-Type": r.headers.get("Content-Type", "application/json")})
+    except httpx.HTTPStatusError as e:
+        end_time = dt.datetime.utcnow()
+        duration = (end_time - start_time).total_seconds() * 1000
+        save_api_log(endpoint="/agent-sre/api/triage", method="POST", status_code=e.response.status_code, duration_ms=duration, payload=payload, response={"error": str(e)})
+        return jsonify({"error": str(e)}), e.response.status_code
+    except Exception as e:
+        end_time = dt.datetime.utcnow()
+        duration = (end_time - start_time).total_seconds() * 1000
+        save_api_log(endpoint="/agent-sre/api/triage", method="POST", status_code=500, duration_ms=duration, payload=payload, response={"error": str(e)})
+        return jsonify({"error": str(e)}), 500    
 
 @app.post("/agent-info/api/route")
 def proxy_info():
     payload = request.get_json(force=True)
-    with httpx.Client(timeout=60) as c:
-        r = c.post(AGENT_INFO_FUNC_URL, json=payload, headers=functions_auth_headers("info"))
-        return (r.text, r.status_code, {"Content-Type": r.headers.get("Content-Type", "application/json")})
+    start_time = dt.datetime.utcnow()
+    try:
+        with httpx.Client(timeout=60) as c:
+            r = c.post(AGENT_INFO_FUNC_URL, json=payload, headers=functions_auth_headers("info"))
+            end_time = dt.datetime.utcnow()
+            duration = (end_time - start_time).total_seconds() * 1000
+            save_api_log(endpoint="/agent-info/api/route", method="POST", status_code=r.status_code, duration_ms=duration, payload=payload, response=r.json())
+            return (r.text, r.status_code, {"Content-Type": r.headers.get("Content-Type", "application/json")})
+    except httpx.HTTPStatusError as e:
+        end_time = dt.datetime.utcnow()
+        duration = (end_time - start_time).total_seconds() * 1000
+        save_api_log(endpoint="/agent-info/api/route", method="POST", status_code=e.response.status_code, duration_ms=duration, payload=payload, response={"error": str(e)})
+        return jsonify({"error": str(e)}), e.response.status_code
+    except Exception as e:
+        end_time = dt.datetime.utcnow()
+        duration = (end_time - start_time).total_seconds() * 1000
+        save_api_log(endpoint="/agent-info/api/route", method="POST", status_code=500, duration_ms=duration, payload=payload, response={"error": str(e)})
+        return jsonify({"error": str(e)}), 500
+
 
 # Durable status (for dashboard)
 @app.get("/status/<instance_id>")
