@@ -61,7 +61,7 @@ _ID_RE = re.compile(
 
 def _parse_adf_ids(alert: dict):
     ess = (alert.get("data") or {}).get("essentials") or {}
-    ids = ess.get("alertTargetIDs") or ess.get("configurationItems") or []
+    ids = ess.get("alertTargetIDs") or  or []
     rid = ids[0] if ids else ""
     m = _ID_RE.match(rid)
     if not m:
@@ -204,11 +204,10 @@ def handle_adf_alert():
     print("Starting to handle alert")
     alert = request.get_json(force=True, silent=True) or {}
     print("[/alerts/adf] schemaId:", alert.get("schemaId"))
-
     # Determine alert flavor robustly (ignore schemaId)
     ess = (alert.get("data") or {}).get("essentials") or {}
     signal = (ess.get("signalType") or "").lower()  # "metric" | "log" | etc.
-
+    print("[/alerts/adf] signalType:", signal)
     triage_ctx = None
     if signal == "metric":
         triage_ctx = _from_metric_alert(alert)
