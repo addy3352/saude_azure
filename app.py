@@ -197,6 +197,7 @@ def _classify_with_aoai(alert: dict, triage_ctx: dict) -> dict:
     """Call Azure OpenAI to classify failure intent. Returns {category, retryable, expected_path, why}."""
     if not AOAI_ENDPOINT or not AOAI_DEPLOYMENT:
         return _heuristic(triage_ctx, alert)
+    print("context is {} and  alert is {} ".format(triage_ctx, alert))
 
     url = f"{AOAI_ENDPOINT}/openai/deployments/{AOAI_DEPLOYMENT}/chat/completions?api-version={AOAI_API_VERSION}"
     system = (
