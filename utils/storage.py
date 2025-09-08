@@ -97,8 +97,8 @@ def list_decisions(pipeline: Optional[str] = None, top: int = 50) -> List[Dict[s
     rows = list(it)
     rows.sort(key=lambda e: e.get("createdAt", ""), reverse=True)
     return [{
-        "createdAt": e.get("createdAt"),
-        "pipeline": e.get("pipeline") or e.get("PartitionKey"),
+        "ts": e.get("createdAt"),
+        "pipeline_name": e.get("pipeline") or e.get("PartitionKey"),
         "category": e.get("category"),
         "action": e.get("action"),
         "status": e.get("status"),
