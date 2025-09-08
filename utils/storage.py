@@ -6,6 +6,7 @@ import logging
 from azure.identity import DefaultAzureCredential, ManagedIdentityCredential, ChainedTokenCredential
 from azure.identity import DefaultAzureCredential
 from azure.data.tables import TableServiceClient
+from typing import Optional, Dict, Any, List
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
