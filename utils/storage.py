@@ -1,9 +1,9 @@
+from __future__ import annotations  # makes annotations lazy -> prevents NameError at import time
 import os
 import uuid
 import datetime as dt
 import json ,uuid
 import logging
-from __future__ import annotations  # makes annotations lazy -> prevents NameError at import time
 from typing import Optional, Dict, Any, List  # <-- this fixes "Optional not defined"
 from azure.identity import DefaultAzureCredential, ManagedIdentityCredential, ChainedTokenCredential
 from azure.identity import DefaultAzureCredential
