@@ -36,9 +36,6 @@ def get_table_service() -> TableServiceClient:
 
 
 
-
-
-
 # ...existing constants/credential...
 
 
@@ -62,7 +59,6 @@ def _table(name: str):
 
 
 def save_decision(
-    *,
     agent: str,
     category: str,
     action: str,
@@ -78,60 +74,45 @@ def save_decision(
     ttl_days: int = 30,
     **_ignored,  # tolerate extra kwargs like conversation_id
 ):
-    # normalize payload
-    if payload_json is None and payload is not None:
-        try:
-            payload_json = json.dumps(payload, default=str)
-        except Exception:
-            payload_json = str(payload)
-
-    svc = get_table_service()
-    svc.create_table_if_not_exists(TABLE_DECISIONS)
-    t = svc.get_table_client(TABLE_DECISIONS)
-
-    row = {
-        "PartitionKey": (pipeline_name or "unknown"),
+    t = get_table(TABLE_DECISIONS)
+    entity = {
+        "PartitionKey": (pipeline_name or "all"),
         "RowKey": uuid.uuid4().hex,
         "createdAt": _now_iso(),
         "agent": agent,
+        "pipeline": pipeline_name or "all",
         "category": category,
         "action": action,
-        "attempt": int(attempt or 0),
-        "status": status or "",
-        "why": (why or "")[:4096],
-        "pipeline": pipeline_name or "",
-        "run_id": run_id or "",
-        "instance_id": instance_id or "",
+        "attempt": int(attempt),
+        "status": status,
+        "why": (why or "")[:1024],
+        "run_id": run_id,
+        "instance_id": instance_id,
         "context": (context_json or "")[:MAX_STR],
-        "payload": (payload_json or "")[:MAX_STR],  # <-- NEW column
+        "payload": (payload_json or "")[:MAX_STR],
         "ttlDays": int(ttl_days),
     }
-    t.upsert_entity(row)
+    t.upsert_entity(entity)    
+    # normalize payload
+
 
 def list_decisions(pipeline: Optional[str] = None, top: int = 50) -> List[Dict[str, Any]]:
-    svc = get_table_service()
-    svc.create_table_if_not_exists(TABLE_DECISIONS)
-    t = svc.get_table_client(TABLE_DECISIONS)
-
+    t = get_table(TABLE_DECISIONS)
     it = t.query_entities(f"PartitionKey eq '{pipeline}'") if pipeline else t.list_entities()
-    rows = list(islice(it, top * 3))
+    rows = list(it)
     rows.sort(key=lambda e: e.get("createdAt", ""), reverse=True)
-
-    out = []
-    for e in rows[:top]:
-        out.append({
-            "createdAt": e.get("createdAt"),
-            "pipeline": e.get("pipeline") or e.get("PartitionKey"),
-            "category": e.get("category"),
-            "action": e.get("action"),
-            "status": e.get("status"),
-            "why": e.get("why"),
-            "run_id": e.get("run_id"),
-            "instance_id": e.get("instance_id"),
-            "context": e.get("context") or "",
-            "payload": e.get("payload") or "",  # <-- expose payload too
-        })
-    return out
+    return [{
+        "createdAt": e.get("createdAt"),
+        "pipeline": e.get("pipeline") or e.get("PartitionKey"),
+        "category": e.get("category"),
+        "action": e.get("action"),
+        "status": e.get("status"),
+        "why": e.get("why"),
+        "run_id": e.get("run_id"),
+        "instance_id": e.get("instance_id"),
+        "context": e.get("context") or "",
+        "payload": e.get("payload") or "",
+    } for e in rows[:top]]
 
 
 
@@ -158,7 +139,7 @@ def save_api_log(endpoint: str, method: str, status_code: int, duration_ms: Opti
 
 def list_api_logs(top: int = 50) -> List[Dict[str, Any]]:
     t = get_table(TABLE_API_LOGS)
-    rows = list(t.list_entities())  # simple; client-side sort
+    rows = list(t.list_entities())
     rows.sort(key=lambda e: e.get("createdAt", ""), reverse=True)
     return [{
         "createdAt": e.get("createdAt"),
