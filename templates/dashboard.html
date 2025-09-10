@@ -5,10 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>SAUDE Dashboard</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <!-- Mermaid for diagrams on Architecture tab -->
-  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
-  <script>mermaid.initialize({ startOnLoad: true, securityLevel: "loose" });</script>
+  <!-- Load libs with defer so network hiccups don't block our app -->
+  <script defer src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
     body { font-family: 'Inter', sans-serif; }
@@ -141,7 +140,7 @@
             <h3 class="text-2xl font-bold">End-to-End Flow (Sequence)</h3>
             <p class="text-gray-600">ADF failure → Azure Monitor → SAUDE → AOAI → Agent-SRE/Notify → Dashboard.</p>
             <div class="bg-gray-50 rounded-lg p-4 overflow-auto">
-              <pre class="mermaid">sequenceDiagram
+              <div class="mermaid">sequenceDiagram
   autonumber
   participant ADF as Azure Data Factory
   participant MON as Azure Monitor (Alert)
@@ -151,22 +150,22 @@
   participant STORE as Azure Table Storage
   participant UI as Dashboard
 
-  ADF-&gt;&gt;MON: Pipeline failure (metric/log)
-  MON-&gt;&gt;APP: Action Group Webhook (Common Alert Schema)
-  APP-&gt;&gt;AOAI: Classify {category, retryable, expected_path}
+  ADF--&gt;&gt;MON: Pipeline failure (metric/log)
+  MON--&gt;&gt;APP: Action Group Webhook (Common Alert Schema)
+  APP--&gt;&gt;AOAI: Classify {category, retryable, expected_path}
   AOAI--&gt;&gt;APP: Classification result
 
   alt retryable OR category == FileNotFound
-    APP-&gt;&gt;SRE: start_triage(context)
-    SRE-&gt;&gt;ADF: Retry / wait &amp; check path
+    APP--&gt;&gt;SRE: start_triage(context)
+    SRE--&gt;&gt;ADF: Retry / wait &amp; check path
     SRE--&gt;&gt;APP: instanceId / status
   else non-retryable
     APP--&gt;&gt;UI: Notify (Teams/Email/Feed)
   end
 
-  APP-&gt;&gt;STORE: Persist decision &amp; API logs
-  UI-&gt;&gt;APP: Poll /api/sre/actions and /status/{id}
-              </pre>
+  APP--&gt;&gt;STORE: Persist decision &amp; API logs
+  UI--&gt;&gt;APP: Poll /api/sre/actions and /status/{id}
+              </div>
             </div>
           </section>
 
@@ -174,50 +173,42 @@
           <section class="space-y-3">
             <h3 class="text-2xl font-bold">Logical Architecture</h3>
             <div class="bg-gray-50 rounded-lg p-4 overflow-auto">
-<pre class="mermaid">flowchart LR
-  %% Clusters for readability
-  subgraph Azure["Azure Subscription"]
-    subgraph Data["Data &amp; Monitoring"]
-      ADF["ADF Pipelines"]
-      MON["Azure Monitor<br/>Metric/KQL Alerts"]
-      LA[("Log Analytics / KQL")]
-    end
-    subgraph Platform["Platform Services"]
-      AOAI[("Azure OpenAI Deployment")]
-      TBL[("Azure Table Storage")]
-      ARG[("Azure Resource Graph")]
-    end
-    subgraph Agents["Serverless Agents"]
-      SRE["Agent-SRE<br/>Durable Functions"]
-      INFO["Agent-Info<br/>Functions"]
-    end
+              <div class="mermaid">flowchart LR
+  classDef svc fill:#ffffff,stroke:#94a3b8,stroke-width:1px
+
+  subgraph AZURE [Azure]
+    ADF["ADF Pipelines"]:::svc
+    MON["Azure Monitor Alerts"]:::svc
+    LA["Log Analytics / KQL"]:::svc
+    AOAI["Azure OpenAI"]:::svc
+    TBL["Azure Table Storage"]:::svc
+    ARG["Azure Resource Graph"]:::svc
+    SRE["Agent-SRE (Durable Functions)"]:::svc
+    INFO["Agent-Info Functions"]:::svc
   end
 
-  subgraph Web["SAUDE Web App"]
-    APP["Flask API<br/>/alerts/adf &amp; /api/*"]
-    UI["dashboard.html"]
+  subgraph WEB ["SAUDE Web App"]
+    APP["Flask API /alerts/adf + /api"]:::svc
+    UI["dashboard.html"]:::svc
   end
 
-  %% Ingress (events & logs)
   ADF --> MON
   ADF --> LA
-  MON -- "Webhook: Common Alert Schema" --> APP
+  MON -- "Webhook (CAS)" --> APP
 
-  %% Enrichment + Decision
-  UI -- "Fetch JSON /api/*" --> APP
+  UI -- "Fetch JSON" --> APP
   APP -- "Classify" --> AOAI
   APP -- "Enrich (KQL)" --> LA
-  APP -- "Audit decisions &amp; API logs" --> TBL
-  APP -- "Trigger triage" --> SRE
+  APP -- "Audit" --> TBL
+  APP -- "Trigger" --> SRE
   APP -- "Info queries" --> INFO
-  INFO -- "Query" --> ARG
+  INFO --> ARG
   SRE -- "Retry / Wait &amp; Check" --> ADF
 
-  %% Notifications
-  NOTIF["Teams/Email<br/>Logic App"]
+  NOTIF["Teams / Email (Logic App)"]
   APP -. "Non-retryable notify" .-> NOTIF
   MON -. "Action Group" .-> NOTIF
-</pre>
+</div>
             </div>
           </section>
 
@@ -302,6 +293,62 @@
       .replace(/&/g,"&amp;").replace(/</g,"&lt;")
       .replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");}
 
+    // Robust JSON reader (handles empty/invalid JSON bodies)
+    async function readJsonLenient(res){
+      const raw = await res.text();
+      if (!raw) return null; // empty body
+      try{ return JSON.parse(raw); }catch{ return null; }
+    }
+
+    // Normalize any logs payload shape into an array of rows the table can render
+    function normalizeLogsPayload(payload){
+      if (!payload) return [];
+      let items = [];
+      if (Array.isArray(payload)) items = payload;
+      else if (Array.isArray(payload.items)) items = payload.items;
+      else if (Array.isArray(payload.value)) items = payload.value; // common OData shape
+      else if (payload && typeof payload === 'object') {
+        const maybe = Object.values(payload);
+        if (maybe.every(v => typeof v === 'object')) items = maybe; else items = [];
+      }
+      return items.map(x => ({
+        createdAt: x.createdAt || x.ts || x.time || x.timestamp || x.date || '',
+        endpoint:  x.endpoint  || x.path || x.url || x.route || '',
+        method:    x.method    || x.verb || x.httpMethod || '',
+        statusCode: (x.statusCode ?? x.status ?? x.code ?? ''),
+        durationMs: (x.durationMs ?? x.duration ?? x.ms ?? x.elapsedMs)
+      }));
+    }
+
+    // Mermaid bootstrapping guarded (prevents global ReferenceError)
+    function ensureMermaidInit(){
+      if (!window.mermaid) return false;
+      if (!ensureMermaidInit._inited){
+        try { mermaid.initialize({ startOnLoad:false, securityLevel:"loose" }); ensureMermaidInit._inited = true; }
+        catch(e){ console.error('Mermaid init error:', e); }
+      }
+      return true;
+    }
+    function mermaidRenderVisible(){
+      if (!ensureMermaidInit()) return;
+      try{
+        const nodes = document.querySelectorAll('.mermaid:not([data-processed])');
+        if (nodes && nodes.length) mermaid.init(undefined, nodes);
+      }catch(e){ console.error('Mermaid render error:', e); }
+      // Fallback: if still not processed after a tick, show raw text instead of an empty box
+      setTimeout(()=>{
+        document.querySelectorAll('.mermaid').forEach(el => {
+          if (!el.getAttribute('data-processed')){
+            const code = el.textContent.trim();
+            const pre = document.createElement('pre');
+            pre.className = 'text-xs text-gray-700 whitespace-pre overflow-auto';
+            pre.textContent = code;
+            el.replaceWith(pre);
+          }
+        });
+      }, 1200);
+    }
+
     // ---------- tabs ----------
     const tabs = {
       dashboard: document.getElementById('tab-dashboard'),
@@ -326,6 +373,7 @@
       tabs[tabName]?.classList.add('active');
       navs[tabName]?.classList.add('border-blue-600','font-bold');
       navs[tabName]?.classList.remove('border-transparent','font-medium');
+      if (tabName === 'architecture') mermaidRenderVisible();
     }
     const initialTab = (window.location.hash.substring(1) || 'dashboard');
     activateTab(initialTab);
@@ -342,9 +390,9 @@
     async function loadDashboardData(){
       const apiBaseUrl = window.location.origin;
       try{
-        const r = await fetch(`${apiBaseUrl}/api/resources/summary`);
+        const r = await fetch(`${apiBaseUrl}/api/resources/summary`, { headers: { 'Accept': 'application/json' }});
         if(!r.ok) throw new Error(`status ${r.status}`);
-        const data = await r.json();
+        const data = await readJsonLenient(r) || {};
 
         document.getElementById('kpi-success').textContent = data.kpi_success ?? '—';
         document.getElementById('kpi-mttr').textContent    = data.kpi_mttr ?? '—';
@@ -358,15 +406,17 @@
 
         const ctx = document.getElementById('resourcesChart').getContext('2d');
         if (resourcesChart) resourcesChart.destroy();
-        resourcesChart = new Chart(ctx,{
-          type:'bar',
-          data:{ labels, datasets:[
-            {label:'Total Azure', data: total},
-            {label:'Created by Terraform', data: tf}
-          ]},
-          options:{ responsive:true, maintainAspectRatio:false,
-            scales:{ x:{stacked:true}, y:{stacked:true} } }
-        });
+        if (window.Chart){
+          resourcesChart = new Chart(ctx,{
+            type:'bar',
+            data:{ labels, datasets:[
+              {label:'Total Azure', data: total},
+              {label:'Created by Terraform', data: tf}
+            ]},
+            options:{ responsive:true, maintainAspectRatio:false,
+              scales:{ x:{stacked:true}, y:{stacked:true} } }
+          });
+        }
         document.getElementById('chartError').classList.add('hidden');
       }catch(e){
         console.error('resources/summary error:', e);
@@ -378,9 +428,9 @@
     async function loadLastDecisions(){
       const apiBaseUrl = window.location.origin;
       try{
-        const r = await fetch(`${apiBaseUrl}/api/sre/actions?top=5`);
+        const r = await fetch(`${apiBaseUrl}/api/sre/actions?top=5`, { headers: { 'Accept': 'application/json' }});
         if(!r.ok) throw new Error(`status ${r.status}`);
-        const items = await r.json();
+        const items = await readJsonLenient(r) || [];
 
         const tbody = document.getElementById('decisions-table-body');
         tbody.innerHTML = '';
@@ -410,9 +460,9 @@
       const tbody = document.querySelector('#pipelineFeed tbody');
       tbody.innerHTML = '';
       try{
-        const res = await fetch(`${apiBaseUrl}/api/sre/actions` + q);
+        const res = await fetch(`${apiBaseUrl}/api/sre/actions` + q, { headers: { 'Accept': 'application/json' }});
         if(!res.ok) throw new Error(`status ${res.status}`);
-        const items = await res.json();
+        const items = await readJsonLenient(res) || [];
 
         if(!items.length){
           document.getElementById('emptyState').classList.remove('hidden');
@@ -450,10 +500,11 @@
       const tbody = document.querySelector('#api-logs-table tbody');
       tbody.innerHTML = '';
       try{
-        const res = await fetch(`${apiBaseUrl}/api/logs/actions`);
+        const res = await fetch(`${apiBaseUrl}/api/logs/actions`, { headers: { 'Accept': 'application/json' }});
         if(!res.ok) throw new Error(`status ${res.status}`);
-        const data = await res.json();
-        const items = Array.isArray(data) ? data : (data.items || []);
+        const data = await readJsonLenient(res);
+        const items = normalizeLogsPayload(data);
+
         if(!items.length){
           document.getElementById('emptyLogsState').classList.remove('hidden');
           document.getElementById('logsError').classList.add('hidden');
@@ -498,7 +549,7 @@
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({ message: userMessage })
         });
-        const data = await resp.json();
+        const data = await readJsonLenient(resp) || {};
         const agentMsgDiv = document.createElement('div');
         agentMsgDiv.className = 'flex';
         agentMsgDiv.innerHTML = `<div class="agent-message">${escapeHTML(String(data.reply ?? ''))}</div>`;
@@ -521,6 +572,20 @@
     setInterval(loadLastDecisions, 30000);
     setInterval(loadFeed,        10000);
     setInterval(loadLogs,        10000);
+
+    // ---------- self-tests for the log parser (dev console only) ----------
+    (function runLogParsingSelfTests(){
+      const shapes = [
+        [{ createdAt:"t", endpoint:"/e", method:"GET", statusCode:200, durationMs:1 }],
+        { items: [{ ts:"t2", path:"/p", verb:"POST", status:201, duration:2 }] },
+        { value: [{ time:"t3", url:"/u", httpMethod:"PUT", code:500, ms:3 }] },
+        { 0:{ createdAt:"t4", endpoint:"/x", method:"GET", statusCode:204, durationMs:4 }, 1:{ createdAt:"t5" } }
+      ];
+      for (const s of shapes){
+        const out = normalizeLogsPayload(s);
+        console.debug('[self-test] normalizeLogsPayload →', out);
+      }
+    })();
   </script>
 </body>
 </html>
