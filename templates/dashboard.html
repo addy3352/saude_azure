@@ -14,6 +14,57 @@
     .chat-container { height: 500px; overflow-y: auto; }
     .user-message { background:#2563eb;color:#fff;align-self:flex-end;border-radius:1.5rem 1.5rem .5rem 1.5rem;padding:.75rem 1.25rem;max-width:70%;}
     .agent-message { background:#e5e7eb;color:#1f2937;border-radius:1.5rem 1.5rem 1.5rem .5rem;padding:.75rem 1.25rem;max-width:70%;}
+    .sequence-diagram {
+        max-width: 100%;
+        overflow-x: auto;
+    }
+    .diagram-table {
+        border-collapse: collapse;
+        width: 100%;
+        min-width: 800px;
+    }
+    .diagram-table th, .diagram-table td {
+        border: 1px solid #e5e7eb;
+        padding: 8px;
+        text-align: center;
+        vertical-align: top;
+    }
+    .diagram-table th {
+        background-color: #f3f4f6;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+    .diagram-table td {
+        position: relative;
+    }
+    .diagram-table td:not(:first-child) {
+        border-left: none;
+    }
+    .diagram-table tr:not(:last-child) td::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        height: 100%;
+        width: 1px;
+        background-color: #d1d5db;
+        z-index: 0;
+    }
+    .diagram-arrow {
+        position: relative;
+        text-align: center;
+        margin: 15px 0;
+    }
+    .diagram-arrow::before {
+        content: '→';
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 24px;
+        color: #4b5563;
+        top: -10px;
+    }
   </style>
 </head>
 <body class="bg-gray-100 text-gray-800">
@@ -133,52 +184,149 @@
       <div id="tab-architecture" class="tab-pane">
         <h2 class="text-3xl font-bold text-center mb-6 text-gray-800">SAUDE Architecture & Documentation</h2>
         <div class="bg-white rounded-lg shadow-sm p-6 md:p-10">
-          <p>The SAUDE application is a lightweight web façade with serverless agents for triage and infra insights.</p>
+          <p>This is a guide to the SAUDE platform, a solution for automating and orchestrating Azure Data Factory SRE tasks with intelligent agents. Below you'll find a breakdown of the system's design, its scalability and cost model, and a detailed sequence flow of how it operates.</p>
+          
           <div class="mt-8">
-            <h3 class="text-2xl font-bold">Key Components</h3>
-            <ul class="list-disc list-inside space-y-2">
-              <li><strong class="text-blue-600">SAUDE Web App (Flask)</strong> — dashboard + webhook + AOAI classify.</li>
-              <li><strong class="text-blue-600">Agent-SRE-Func</strong> — Durable Functions triage flows.</li>
-              <li><strong class="text-blue-600">Agent-Info-Func</strong> — inventory/info via Resource Graph.</li>
-              <li><strong class="text-blue-600">Azure Monitor</strong> — ADF failure alerts → webhook.</li>
-              <li><strong class="text-blue-600">Azure Table Storage</strong> — transcripts & decisions.</li>
+            <h3 class="text-2xl font-bold">1. Scalability for the Platform</h3>
+            <p class="mt-2">The SAUDE platform is built on a serverless architecture designed for high availability and elastic scalability. The key components scale independently based on demand:</p>
+            <ul class="list-disc list-inside space-y-2 mt-2">
+              <li><strong>Flask Web App:</strong> Hosted on Azure App Service, it can scale out horizontally (add more instances) to handle increased traffic from webhooks and dashboard users.</li>
+              <li><strong>Azure Functions:</strong> The SRE and Info agents are deployed on a Consumption or Premium plan. They automatically scale to handle bursts of events or concurrent triage tasks without manual intervention.</li>
+              <li><strong>Azure Table Storage:</strong> A highly scalable NoSQL database that can handle large volumes of audit logs and API calls without requiring you to manage shards or indexes.</li>
+            </ul>
+            <p class="mt-2">This design ensures the platform can grow with your needs, handling everything from a few alerts to thousands of events per hour without manual configuration.</p>
+          </div>
+          
+          <div class="mt-8">
+            <h3 class="text-2xl font-bold">2. Cost Implications</h3>
+            <p class="mt-2">The cost model is a key feature of the serverless design. The platform operates on a pay-as-you-go basis, with costs directly tied to usage. This makes the MVP highly cost-effective.</p>
+            <ul class="list-disc list-inside space-y-2 mt-2">
+              <li><strong>App Service:</strong> Costs are based on the number of instances and the service tier. The B1 tier provides a low baseline cost.</li>
+              <li><strong>Azure Functions:</strong> The Consumption plan includes a generous free grant. Costs are incurred only for CPU time and memory usage beyond that, making it ideal for event-driven workloads.</li>
+              <li><strong>Azure OpenAI:</strong> The `gpt-4o-mini` model is a low-cost option. Your costs will be directly proportional to the number of tokens used for classification.</li>
+              <li><strong>Azure Table Storage:</strong> Extremely low cost, based on data volume and transactions, making it a perfect fit for logging and audit trails.</li>
             </ul>
           </div>
-          <div class="mt-8">
-            <h3 class="text-2xl font-bold">Workflow</h3>
-            <ol class="list-decimal list-inside space-y-2">
-              <li>ADF pipeline fails → Azure Monitor alert.</li>
-              <li>Action Group posts Common Alert Schema to <code>/alerts/adf</code>.</li>
-              <li>AOAI classifies → retryable/FileNotFound → Agent-SRE; otherwise notify.</li>
-              <li>Audit written to Table Storage; dashboard shows status.</li>
-            </ol>
-          </div>
-        </div>
-      </div>
 
-      <!-- Logs -->
-      <div id="tab-logs" class="tab-pane">
-        <div class="bg-white rounded-lg shadow-sm">
-          <div class="p-6 flex justify-between items-center">
-            <h3 class="text-xl font-semibold">API Logs</h3>
-            <button onclick="loadLogs()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Refresh</button>
-          </div>
-          <div class="p-6">
-            <div class="overflow-x-auto">
-              <table id="api-logs-table" class="min-w-full divide-y divide-gray-200">
+          <div class="mt-8">
+            <h3 class="text-2xl font-bold">3. Flow of Sequence</h3>
+            <p class="mt-2">The automated triage and remediation process is triggered by a failed pipeline and follows a precise sequence of events:</p>
+            <div class="sequence-diagram p-4 bg-gray-50 rounded-lg shadow-inner mt-4">
+              <table class="diagram-table">
                 <thead>
                   <tr>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Endpoint</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Method</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status Code</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration (ms)</th>
+                    <th>ADF</th>
+                    <th>Monitor</th>
+                    <th>SAUDE App</th>
+                    <th>Log Analytics</th>
+                    <th>Azure OpenAI</th>
+                    <th>SRE Agent</th>
+                    <th>Notifications</th>
                   </tr>
                 </thead>
-                <tbody></tbody>
+                <tbody>
+                  <tr>
+                    <td>Pipeline fails</td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                  </tr>
+                  <tr>
+                    <td></td>
+                    <td>&nbsp;</td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                  </tr>
+                  <tr>
+                    <td colspan="2" class="border-b-0"></td>
+                    <td class="diagram-arrow" colspan="5">Webhook (Common Alert Schema)</td>
+                  </tr>
+                  <tr>
+                    <td></td>
+                    <td></td>
+                    <td>Parse alert & verify</td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                  </tr>
+                  <tr>
+                    <td></td>
+                    <td></td>
+                    <td class="diagram-arrow" colspan="2">Enrich with KQL (Error details)</td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                  </tr>
+                  <tr>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td>&nbsp;</td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                  </tr>
+                  <tr>
+                    <td colspan="4" class="border-b-0"></td>
+                    <td class="diagram-arrow" colspan="2">"Classify failure"</td>
+                    <td></td>
+                  </tr>
+                  <tr>
+                    <td></td>
+                    <td></td>
+                    <td class="diagram-arrow" colspan="3">`{category, retryable, path}`</td>
+                    <td></td>
+                    <td></td>
+                  </tr>
+                  <tr>
+                    <td></td>
+                    <td></td>
+                    <td>Store decision</td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                  </tr>
+                  <tr>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                  </tr>
+                  <tr>
+                    <td colspan="5" class="border-b-0"></td>
+                    <td class="diagram-arrow" colspan="2">Queue triage (Durable)</td>
+                  </tr>
+                  <tr>
+                    <td colspan="5" class="border-b-0"></td>
+                    <td>Retry Pipeline</td>
+                    <td></td>
+                  </tr>
+                  <tr>
+                    <td>&nbsp;</td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                  </tr>
+                  <tr>
+                    <td colspan="6" class="border-b-0"></td>
+                    <td class="diagram-arrow">Escalate (if retries fail)</td>
+                  </tr>
+                </tbody>
               </table>
-              <div id="emptyLogsState" class="mt-4 text-center text-gray-500 hidden">No API logs yet.</div>
-              <div id="logsError" class="mt-4 text-center text-red-600 hidden">Could not load logs.</div>
             </div>
           </div>
         </div>
@@ -209,13 +357,18 @@
     };
     function activateTab(tabName){
       for (const name in tabs){
-        tabs[name].classList.remove('active');
-        navs[name].classList.remove('border-blue-600','font-bold');
-        navs[name].classList.add('border-transparent','font-medium');
+        tabs[name]?.classList.remove('active');
+        navs[name]?.classList.remove('border-blue-600','font-bold');
+        navs[name]?.classList.add('border-transparent','font-medium');
       }
       tabs[tabName]?.classList.add('active');
       navs[tabName]?.classList.add('border-blue-600','font-bold');
       navs[tabName]?.classList.remove('border-transparent','font-medium');
+
+      // Special handling for Mermaid to re-render
+      if (tabName === 'architecture') {
+        mermaid.init();
+      }
     }
     const initialTab = (window.location.hash.substring(1) || 'dashboard');
     activateTab(initialTab);
@@ -274,9 +427,10 @@
     async function loadLastDecisions(){
       const apiBaseUrl = window.location.origin;
       try{
-        const r = await fetch(`${apiBaseUrl}/api/sre/actions?top=5`);
+        const r = await fetch(`${apiBaseUrl}/api/sre/last-decisions?top=5`);
         if(!r.ok) throw new Error(`status ${r.status}`);
-        const items = await r.json();
+        const data = await r.json();
+        const items = data.items || [];
 
         const tbody = document.getElementById('decisions-table-body');
         tbody.innerHTML = '';
@@ -289,8 +443,8 @@
         for(const it of items){
           const tr = document.createElement('tr');
           tr.innerHTML = `
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${escapeHTML(it.ts || '')}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${escapeHTML(it.pipeline_name || '')}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${escapeHTML(it.createdAt || '')}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${escapeHTML(it.pipeline || '')}</td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${escapeHTML(it.category || '')}</td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${escapeHTML(it.action || '')}</td>
           `;
