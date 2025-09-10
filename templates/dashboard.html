@@ -6,6 +6,9 @@
   <title>SAUDE Dashboard</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Mermaid for diagrams on Architecture tab -->
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>mermaid.initialize({ startOnLoad: true, securityLevel: "loose" });</script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
     body { font-family: 'Inter', sans-serif; }
@@ -14,57 +17,6 @@
     .chat-container { height: 500px; overflow-y: auto; }
     .user-message { background:#2563eb;color:#fff;align-self:flex-end;border-radius:1.5rem 1.5rem .5rem 1.5rem;padding:.75rem 1.25rem;max-width:70%;}
     .agent-message { background:#e5e7eb;color:#1f2937;border-radius:1.5rem 1.5rem 1.5rem .5rem;padding:.75rem 1.25rem;max-width:70%;}
-    .sequence-diagram {
-        max-width: 100%;
-        overflow-x: auto;
-    }
-    .diagram-table {
-        border-collapse: collapse;
-        width: 100%;
-        min-width: 800px;
-    }
-    .diagram-table th, .diagram-table td {
-        border: 1px solid #e5e7eb;
-        padding: 8px;
-        text-align: center;
-        vertical-align: top;
-    }
-    .diagram-table th {
-        background-color: #f3f4f6;
-        font-weight: 600;
-        white-space: nowrap;
-    }
-    .diagram-table td {
-        position: relative;
-    }
-    .diagram-table td:not(:first-child) {
-        border-left: none;
-    }
-    .diagram-table tr:not(:last-child) td::after {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 50%;
-        transform: translateX(-50%);
-        height: 100%;
-        width: 1px;
-        background-color: #d1d5db;
-        z-index: 0;
-    }
-    .diagram-arrow {
-        position: relative;
-        text-align: center;
-        margin: 15px 0;
-    }
-    .diagram-arrow::before {
-        content: '→';
-        position: absolute;
-        left: 50%;
-        transform: translateX(-50%);
-        font-size: 24px;
-        color: #4b5563;
-        top: -10px;
-    }
   </style>
 </head>
 <body class="bg-gray-100 text-gray-800">
@@ -180,153 +132,163 @@
         </div>
       </div>
 
-      <!-- Architecture -->
+      <!-- Architecture (REPLACED) -->
       <div id="tab-architecture" class="tab-pane">
-        <h2 class="text-3xl font-bold text-center mb-6 text-gray-800">SAUDE Architecture & Documentation</h2>
-        <div class="bg-white rounded-lg shadow-sm p-6 md:p-10">
-          <p>This is a guide to the SAUDE platform, a solution for automating and orchestrating Azure Data Factory SRE tasks with intelligent agents. Below you'll find a breakdown of the system's design, its scalability and cost model, and a detailed sequence flow of how it operates.</p>
-          
-          <div class="mt-8">
-            <h3 class="text-2xl font-bold">1. Scalability for the Platform</h3>
-            <p class="mt-2">The SAUDE platform is built on a serverless architecture designed for high availability and elastic scalability. The key components scale independently based on demand:</p>
-            <ul class="list-disc list-inside space-y-2 mt-2">
-              <li><strong>Flask Web App:</strong> Hosted on Azure App Service, it can scale out horizontally (add more instances) to handle increased traffic from webhooks and dashboard users.</li>
-              <li><strong>Azure Functions:</strong> The SRE and Info agents are deployed on a Consumption or Premium plan. They automatically scale to handle bursts of events or concurrent triage tasks without manual intervention.</li>
-              <li><strong>Azure Table Storage:</strong> A highly scalable NoSQL database that can handle large volumes of audit logs and API calls without requiring you to manage shards or indexes.</li>
-            </ul>
-            <p class="mt-2">This design ensures the platform can grow with your needs, handling everything from a few alerts to thousands of events per hour without manual configuration.</p>
-          </div>
-          
-          <div class="mt-8">
-            <h3 class="text-2xl font-bold">2. Cost Implications</h3>
-            <p class="mt-2">The cost model is a key feature of the serverless design. The platform operates on a pay-as-you-go basis, with costs directly tied to usage. This makes the MVP highly cost-effective.</p>
-            <ul class="list-disc list-inside space-y-2 mt-2">
-              <li><strong>App Service:</strong> Costs are based on the number of instances and the service tier. The B1 tier provides a low baseline cost.</li>
-              <li><strong>Azure Functions:</strong> The Consumption plan includes a generous free grant. Costs are incurred only for CPU time and memory usage beyond that, making it ideal for event-driven workloads.</li>
-              <li><strong>Azure OpenAI:</strong> The `gpt-4o-mini` model is a low-cost option. Your costs will be directly proportional to the number of tokens used for classification.</li>
-              <li><strong>Azure Table Storage:</strong> Extremely low cost, based on data volume and transactions, making it a perfect fit for logging and audit trails.</li>
-            </ul>
-          </div>
+        <h2 class="text-3xl font-bold text-center mb-6 text-gray-800">SAUDE Architecture &amp; Documentation</h2>
+        <div class="bg-white rounded-lg shadow-sm p-6 md:p-10 space-y-8">
+          <!-- Sequence Diagram -->
+          <section class="space-y-3">
+            <h3 class="text-2xl font-bold">End-to-End Flow (Sequence)</h3>
+            <p class="text-gray-600">ADF failure → Azure Monitor → SAUDE → AOAI → Agent-SRE/Notify → Dashboard.</p>
+            <div class="bg-gray-50 rounded-lg p-4 overflow-auto">
+              <pre class="mermaid">sequenceDiagram
+  autonumber
+  participant ADF as Azure Data Factory
+  participant MON as Azure Monitor (Alert)
+  participant APP as SAUDE Web App (/alerts/adf)
+  participant AOAI as Azure OpenAI (Classifier)
+  participant SRE as Agent-SRE (Durable Functions)
+  participant STORE as Azure Table Storage
+  participant UI as Dashboard
 
-          <div class="mt-8">
-            <h3 class="text-2xl font-bold">3. Flow of Sequence</h3>
-            <p class="mt-2">The automated triage and remediation process is triggered by a failed pipeline and follows a precise sequence of events:</p>
-            <div class="sequence-diagram p-4 bg-gray-50 rounded-lg shadow-inner mt-4">
-              <table class="diagram-table">
+  ADF-&gt;&gt;MON: Pipeline failure (metric/log)
+  MON-&gt;&gt;APP: Action Group Webhook (Common Alert Schema)
+  APP-&gt;&gt;AOAI: Classify {category, retryable, expected_path}
+  AOAI--&gt;&gt;APP: Classification result
+
+  alt retryable OR category == FileNotFound
+    APP-&gt;&gt;SRE: start_triage(context)
+    SRE-&gt;&gt;ADF: Retry / wait &amp; check path
+    SRE--&gt;&gt;APP: instanceId / status
+  else non-retryable
+    APP--&gt;&gt;UI: Notify (Teams/Email/Feed)
+  end
+
+  APP-&gt;&gt;STORE: Persist decision &amp; API logs
+  UI-&gt;&gt;APP: Poll /api/sre/actions and /status/{id}
+              </pre>
+            </div>
+          </section>
+
+          <!-- Logical Architecture Diagram -->
+          <section class="space-y-3">
+            <h3 class="text-2xl font-bold">Logical Architecture</h3>
+            <div class="bg-gray-50 rounded-lg p-4 overflow-auto">
+<pre class="mermaid">flowchart LR
+  %% Clusters for readability
+  subgraph Azure["Azure Subscription"]
+    subgraph Data["Data &amp; Monitoring"]
+      ADF["ADF Pipelines"]
+      MON["Azure Monitor<br/>Metric/KQL Alerts"]
+      LA[("Log Analytics / KQL")]
+    end
+    subgraph Platform["Platform Services"]
+      AOAI[("Azure OpenAI Deployment")]
+      TBL[("Azure Table Storage")]
+      ARG[("Azure Resource Graph")]
+    end
+    subgraph Agents["Serverless Agents"]
+      SRE["Agent-SRE<br/>Durable Functions"]
+      INFO["Agent-Info<br/>Functions"]
+    end
+  end
+
+  subgraph Web["SAUDE Web App"]
+    APP["Flask API<br/>/alerts/adf &amp; /api/*"]
+    UI["dashboard.html"]
+  end
+
+  %% Ingress (events & logs)
+  ADF --> MON
+  ADF --> LA
+  MON -- "Webhook: Common Alert Schema" --> APP
+
+  %% Enrichment + Decision
+  UI -- "Fetch JSON /api/*" --> APP
+  APP -- "Classify" --> AOAI
+  APP -- "Enrich (KQL)" --> LA
+  APP -- "Audit decisions &amp; API logs" --> TBL
+  APP -- "Trigger triage" --> SRE
+  APP -- "Info queries" --> INFO
+  INFO -- "Query" --> ARG
+  SRE -- "Retry / Wait &amp; Check" --> ADF
+
+  %% Notifications
+  NOTIF["Teams/Email<br/>Logic App"]
+  APP -. "Non-retryable notify" .-> NOTIF
+  MON -. "Action Group" .-> NOTIF
+</pre>
+            </div>
+          </section>
+
+          <!-- Cost & Scalability -->
+          <section class="space-y-3">
+            <h3 class="text-2xl font-bold">Cost &amp; Scalability</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div class="border border-gray-200 rounded-lg p-5">
+                <h4 class="text-xl font-semibold mb-3">Primary Cost Drivers</h4>
+                <ul class="list-disc list-inside text-gray-700 space-y-2">
+                  <li><span class="font-medium">App Service</span> (web): instance size/count; AlwaysOn; egress.</li>
+                  <li><span class="font-medium">Azure Functions</span> (SRE/Info): executions, GB-s, durable storage.</li>
+                  <li><span class="font-medium">Azure OpenAI</span>: tokens per request &amp; model choice.</li>
+                  <li><span class="font-medium">Azure Table Storage</span>: transactions + data-at-rest.</li>
+                  <li><span class="font-medium">Log Analytics</span>: GB ingested &amp; retention.</li>
+                  <li><span class="font-medium">Data Factory</span>: pipeline activity/monitoring overhead.</li>
+                </ul>
+                <h5 class="font-semibold mt-5 mb-2">Keep costs predictable</h5>
+                <ul class="list-disc list-inside text-gray-700 space-y-2">
+                  <li>Dedupe by <code>alertId</code>; throttle bursts.</li>
+                  <li>Cache AOAI results by error signature hash.</li>
+                  <li>Batch Table writes; store links not large blobs.</li>
+                  <li>Use Functions consumption for bursty load.</li>
+                  <li>Right-size Log Analytics retention/verbosity.</li>
+                </ul>
+              </div>
+              <div class="border border-gray-200 rounded-lg p-5">
+                <h4 class="text-xl font-semibold mb-3">Scalability Patterns</h4>
+                <ul class="list-disc list-inside text-gray-700 space-y-2">
+                  <li><span class="font-medium">Web App</span>: autoscale on CPU/req; tune gunicorn workers/threads.</li>
+                  <li><span class="font-medium">Durable Functions</span>: control concurrency (<code>host.json</code>), fan-out checks.</li>
+                  <li><span class="font-medium">AOAI</span>: respect rate limits; queue &amp; retry with jitter; smaller model for classify.</li>
+                  <li><span class="font-medium">Storage</span>: partition by date/pipeline to avoid hot keys.</li>
+                  <li><span class="font-medium">Resilience</span>: idempotency by <code>alertId</code>/<code>runId</code>; DLQ failures.</li>
+                  <li><span class="font-medium">Observability</span>: webhook &amp; AOAI latency, durable backlog, retry success, MTTR.</li>
+                </ul>
+                <h5 class="font-semibold mt-5 mb-2">Suggested knobs</h5>
+                <ul class="list-disc list-inside text-gray-700 space-y-2">
+                  <li>Gunicorn: <code>WEB_CONCURRENCY</code>, <code>THREADS</code>.</li>
+                  <li>Durable: <code>maxConcurrentActivityFunctions</code>, storage provider settings.</li>
+                  <li>AOAI: region-available model with lower cost for classification.</li>
+                </ul>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <!-- Logs -->
+      <div id="tab-logs" class="tab-pane">
+        <div class="bg-white rounded-lg shadow-sm">
+          <div class="p-6 flex justify-between items-center">
+            <h3 class="text-xl font-semibold">API Logs</h3>
+            <button onclick="loadLogs()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Refresh</button>
+          </div>
+          <div class="p-6">
+            <div class="overflow-x-auto">
+              <table id="api-logs-table" class="min-w-full divide-y divide-gray-200">
                 <thead>
                   <tr>
-                    <th>ADF</th>
-                    <th>Monitor</th>
-                    <th>SAUDE App</th>
-                    <th>Log Analytics</th>
-                    <th>Azure OpenAI</th>
-                    <th>SRE Agent</th>
-                    <th>Notifications</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Endpoint</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Method</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status Code</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration (ms)</th>
                   </tr>
                 </thead>
-                <tbody>
-                  <tr>
-                    <td>Pipeline fails</td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                  </tr>
-                  <tr>
-                    <td></td>
-                    <td>&nbsp;</td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                  </tr>
-                  <tr>
-                    <td colspan="2" class="border-b-0"></td>
-                    <td class="diagram-arrow" colspan="5">Webhook (Common Alert Schema)</td>
-                  </tr>
-                  <tr>
-                    <td></td>
-                    <td></td>
-                    <td>Parse alert & verify</td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                  </tr>
-                  <tr>
-                    <td></td>
-                    <td></td>
-                    <td class="diagram-arrow" colspan="2">Enrich with KQL (Error details)</td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                  </tr>
-                  <tr>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td>&nbsp;</td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                  </tr>
-                  <tr>
-                    <td colspan="4" class="border-b-0"></td>
-                    <td class="diagram-arrow" colspan="2">"Classify failure"</td>
-                    <td></td>
-                  </tr>
-                  <tr>
-                    <td></td>
-                    <td></td>
-                    <td class="diagram-arrow" colspan="3">`{category, retryable, path}`</td>
-                    <td></td>
-                    <td></td>
-                  </tr>
-                  <tr>
-                    <td></td>
-                    <td></td>
-                    <td>Store decision</td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                  </tr>
-                  <tr>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                  </tr>
-                  <tr>
-                    <td colspan="5" class="border-b-0"></td>
-                    <td class="diagram-arrow" colspan="2">Queue triage (Durable)</td>
-                  </tr>
-                  <tr>
-                    <td colspan="5" class="border-b-0"></td>
-                    <td>Retry Pipeline</td>
-                    <td></td>
-                  </tr>
-                  <tr>
-                    <td>&nbsp;</td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                  </tr>
-                  <tr>
-                    <td colspan="6" class="border-b-0"></td>
-                    <td class="diagram-arrow">Escalate (if retries fail)</td>
-                  </tr>
-                </tbody>
+                <tbody></tbody>
               </table>
+              <div id="emptyLogsState" class="mt-4 text-center text-gray-500 hidden">No API logs yet.</div>
+              <div id="logsError" class="mt-4 text-center text-red-600 hidden">Could not load logs.</div>
             </div>
           </div>
         </div>
@@ -357,18 +319,13 @@
     };
     function activateTab(tabName){
       for (const name in tabs){
-        tabs[name]?.classList.remove('active');
-        navs[name]?.classList.remove('border-blue-600','font-bold');
-        navs[name]?.classList.add('border-transparent','font-medium');
+        tabs[name].classList.remove('active');
+        navs[name].classList.remove('border-blue-600','font-bold');
+        navs[name].classList.add('border-transparent','font-medium');
       }
       tabs[tabName]?.classList.add('active');
       navs[tabName]?.classList.add('border-blue-600','font-bold');
       navs[tabName]?.classList.remove('border-transparent','font-medium');
-
-      // Special handling for Mermaid to re-render
-      if (tabName === 'architecture') {
-        // We've replaced Mermaid with a table, so this is no longer needed
-      }
     }
     const initialTab = (window.location.hash.substring(1) || 'dashboard');
     activateTab(initialTab);
@@ -389,7 +346,6 @@
         if(!r.ok) throw new Error(`status ${r.status}`);
         const data = await r.json();
 
-        // KPIs (optional in your API; show placeholders if missing)
         document.getElementById('kpi-success').textContent = data.kpi_success ?? '—';
         document.getElementById('kpi-mttr').textContent    = data.kpi_mttr ?? '—';
         document.getElementById('kpi-open').textContent    = data.kpi_open_alerts ?? '—';
@@ -404,17 +360,12 @@
         if (resourcesChart) resourcesChart.destroy();
         resourcesChart = new Chart(ctx,{
           type:'bar',
-          data:{
-            labels,
-            datasets:[
-              {label:'Total Azure', data: total},
-              {label:'Created by Terraform', data: tf}
-            ]
-          },
-          options:{
-            responsive:true, maintainAspectRatio:false,
-            scales:{ x:{stacked:true}, y:{stacked:true} }
-          }
+          data:{ labels, datasets:[
+            {label:'Total Azure', data: total},
+            {label:'Created by Terraform', data: tf}
+          ]},
+          options:{ responsive:true, maintainAspectRatio:false,
+            scales:{ x:{stacked:true}, y:{stacked:true} } }
         });
         document.getElementById('chartError').classList.add('hidden');
       }catch(e){
@@ -427,10 +378,9 @@
     async function loadLastDecisions(){
       const apiBaseUrl = window.location.origin;
       try{
-        const r = await fetch(`${apiBaseUrl}/api/sre/last-decisions?top=5`);
+        const r = await fetch(`${apiBaseUrl}/api/sre/actions?top=5`);
         if(!r.ok) throw new Error(`status ${r.status}`);
-        const data = await r.json();
-        const items = data.items || [];
+        const items = await r.json();
 
         const tbody = document.getElementById('decisions-table-body');
         tbody.innerHTML = '';
@@ -443,17 +393,13 @@
         for(const it of items){
           const tr = document.createElement('tr');
           tr.innerHTML = `
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${escapeHTML(it.createdAt || '')}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${escapeHTML(it.pipeline || '')}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${escapeHTML(it.ts || '')}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${escapeHTML(it.pipeline_name || '')}</td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${escapeHTML(it.category || '')}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${escapeHTML(it.action || '')}</td>
-          `;
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${escapeHTML(it.action || '')}</td>`;
           tbody.appendChild(tr);
         }
-      }catch(e){
-        console.error('last decisions error:', e);
-        // keep the widget quiet; optional: show a small error label
-      }
+      }catch(e){ console.error('last decisions error:', e); }
     }
 
     // ---------- pipelines feed ----------
@@ -488,10 +434,7 @@
             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${escapeHTML(it.status || '')}</td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" title="${why}">${why}</td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${escapeHTML(it.run_id || '')}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm">
-              ${statusUrl ? `<a href="${statusUrl}" target="_blank" class="text-blue-600 hover:text-blue-800">status</a>` : ''}
-            </td>
-          `;
+            <td class="px-6 py-4 whitespace-nowrap text-sm">${statusUrl ? `<a href="${statusUrl}" target="_blank" class="text-blue-600 hover:text-blue-800">status</a>` : ''}</td>`;
           tbody.appendChild(tr);
         }
       }catch(e){
@@ -518,7 +461,6 @@
         }
         document.getElementById('emptyLogsState').classList.add('hidden');
         document.getElementById('logsError').classList.add('hidden');
-
         for (const log of items){
           const tr = document.createElement('tr');
           tr.innerHTML = `
@@ -526,8 +468,7 @@
             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${escapeHTML(log.endpoint || '')}</td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${escapeHTML(log.method || '')}</td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${escapeHTML(String(log.statusCode ?? ''))}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${log.durationMs != null ? escapeHTML(Number(log.durationMs).toFixed(2)) : ''}</td>
-          `;
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${log.durationMs != null ? escapeHTML(Number(log.durationMs).toFixed(2)) : ''}</td>`;
           tbody.appendChild(tr);
         }
       }catch(e){
@@ -541,24 +482,20 @@
     const chatForm   = document.getElementById('chat-form');
     const chatInput  = document.getElementById('chat-input');
     const chatWindow = document.getElementById('chat-window');
-
     chatForm.addEventListener('submit', async (e)=>{
       e.preventDefault();
       const userMessage = chatInput.value.trim();
       if(!userMessage) return;
-
       const userMsgDiv = document.createElement('div');
       userMsgDiv.className = 'flex justify-end';
       userMsgDiv.innerHTML = `<div class="user-message">${escapeHTML(userMessage)}</div>`;
       chatWindow.appendChild(userMsgDiv);
       chatWindow.scrollTop = chatWindow.scrollHeight;
       chatInput.value = '';
-
       try{
         const apiBaseUrl = window.location.origin;
         const resp = await fetch(`${apiBaseUrl}/chat`, {
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
+          method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({ message: userMessage })
         });
         const data = await resp.json();
@@ -581,7 +518,6 @@
     loadLastDecisions();
     loadFeed();
     loadLogs();
-
     setInterval(loadLastDecisions, 30000);
     setInterval(loadFeed,        10000);
     setInterval(loadLogs,        10000);
