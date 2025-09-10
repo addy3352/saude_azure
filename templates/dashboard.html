@@ -174,41 +174,41 @@
             <h3 class="text-2xl font-bold">Logical Architecture</h3>
             <div class="bg-gray-50 rounded-lg p-4 overflow-auto">
               <div class="mermaid">flowchart LR
-  classDef svc fill:#ffffff,stroke:#94a3b8,stroke-width:1px
+  %% Mermaid 10.9.x compatible
 
-  subgraph AZURE [Azure]
-    ADF["ADF Pipelines"]:::svc
-    MON["Azure Monitor Alerts"]:::svc
-    LA["Log Analytics / KQL"]:::svc
-    AOAI["Azure OpenAI"]:::svc
-    TBL["Azure Table Storage"]:::svc
-    ARG["Azure Resource Graph"]:::svc
-    SRE["Agent-SRE (Durable Functions)"]:::svc
-    INFO["Agent-Info Functions"]:::svc
+  subgraph AZURE[Azure]
+    ADF[ADF Pipelines]
+    MON[Azure Monitor Alerts]
+    LA[Log Analytics / KQL]
+    AOAI[Azure OpenAI]
+    TBL[Azure Table Storage]
+    ARG[Azure Resource Graph]
+    SRE[Agent-SRE (Durable Functions)]
+    INFO[Agent-Info Functions]
   end
 
-  subgraph WEB ["SAUDE Web App"]
-    APP["Flask API /alerts/adf + /api"]:::svc
-    UI["dashboard.html"]:::svc
+  subgraph WEB[SAUDE Web App]
+    APP[Flask API /alerts/adf + /api]
+    UI[dashboard.html]
   end
 
   ADF --> MON
   ADF --> LA
-  MON -- "Webhook (CAS)" --> APP
+  MON --|Webhook (CAS)|--> APP
 
-  UI -- "Fetch JSON" --> APP
-  APP -- "Classify" --> AOAI
-  APP -- "Enrich (KQL)" --> LA
-  APP -- "Audit" --> TBL
-  APP -- "Trigger" --> SRE
-  APP -- "Info queries" --> INFO
+  UI --|Fetch JSON|--> APP
+  APP -->|Classify| AOAI
+  APP -->|Enrich (KQL)| LA
+  APP -->|Audit| TBL
+  APP -->|Trigger| SRE
+  APP -->|Info queries| INFO
   INFO --> ARG
-  SRE -- "Retry / Wait &amp; Check" --> ADF
+  SRE -->|Retry / Wait &amp; Check| ADF
 
-  NOTIF["Teams / Email (Logic App)"]
-  APP -. "Non-retryable notify" .-> NOTIF
-  MON -. "Action Group" .-> NOTIF
-</div>
+  NOTIF[Teams / Email (Logic App)]
+  APP -.->|Non-retryable notify| NOTIF
+  MON -.->|Action Group| NOTIF
+              </div>
             </div>
           </section>
 
