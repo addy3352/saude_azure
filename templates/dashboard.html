@@ -367,7 +367,7 @@
 
       // Special handling for Mermaid to re-render
       if (tabName === 'architecture') {
-        mermaid.init();
+        // We've replaced Mermaid with a table, so this is no longer needed
       }
     }
     const initialTab = (window.location.hash.substring(1) || 'dashboard');
