@@ -194,9 +194,9 @@
 
   ADF --> MON
   ADF --> LA
-  MON --|Webhook (CAS)|--> APP
+  MON -->|Webhook (CAS)| APP
 
-  UI --|Fetch JSON|--> APP
+  UI -->|Fetch JSON| APP
   APP -->|Classify| AOAI
   APP -->|Enrich (KQL)| LA
   APP -->|Audit| TBL
@@ -206,8 +206,8 @@
   SRE -->|Retry / Wait &amp; Check| ADF
 
   NOTIF[Teams / Email (Logic App)]
-  APP -.->|Non-retryable notify| NOTIF
-  MON -.->|Action Group| NOTIF
+  APP -->|Non-retryable notify| NOTIF
+  MON -->|Action Group| NOTIF
               </div>
             </div>
           </section>
