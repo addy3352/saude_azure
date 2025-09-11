@@ -7,7 +7,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Load libs with defer so network hiccups don't block our app -->
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
     body { font-family: 'Inter', sans-serif; }
@@ -173,40 +173,18 @@
           <section class="space-y-3">
             <h3 class="text-2xl font-bold">Logical Architecture</h3>
             <div class="bg-gray-50 rounded-lg p-4 overflow-auto">
-              <div class="mermaid">flowchart LR
-subgraph "Azure"
-  ADF["ADF Pipelines"]
-  MON["Azure Monitor Alerts"]
-  LA["Log Analytics / KQL"]
-  AOAI["Azure OpenAI"]
-  TBL["Azure Table Storage"]
-  ARG["Azure Resource Graph"]
-  SRE["Agent-SRE (Durable Functions)"]
-  INFO["Agent-Info Functions"]
-end
+              <div class="mermaid">flowchart LR;
+subgraph "Azure";
+ADF["ADF Pipelines"]; MON["Azure Monitor Alerts"]; LA["Log Analytics / KQL"]; AOAI["Azure OpenAI"]; TBL["Azure Table Storage"]; ARG["Azure Resource Graph"]; SRE["Agent-SRE (Durable Functions)"]; INFO["Agent-Info Functions"];
+end;
+subgraph "SAUDE Web App";
+APP["Flask API /alerts/adf + /api"]; UI["dashboard.html"];
+end;
+ADF-->MON; ADF-->LA; MON-->|Webhook (CAS)|APP;
+UI-->|Fetch JSON|APP; APP-->|Classify|AOAI; APP-->|Enrich (KQL)|LA; APP-->|Audit|TBL; APP-->|Trigger|SRE; APP-->|Info queries|INFO; INFO-->ARG; SRE-->|Retry / Wait &amp; Check|ADF;
+NOTIF["Teams / Email (Logic App)"]; APP-->|Non-retryable notify|NOTIF; MON-->|Action Group|NOTIF;
+</div>
 
-subgraph "SAUDE Web App"
-  APP["Flask API /alerts/adf + /api"]
-  UI["dashboard.html"]
-end
-
-  ADF --> MON
-  ADF --> LA
-  MON -->|Webhook (CAS)| APP
-
-  UI  -->|Fetch JSON| APP
-  APP -->|Classify| AOAI
-  APP -->|Enrich (KQL)| LA
-  APP -->|Audit| TBL
-  APP -->|Trigger| SRE
-  APP -->|Info queries| INFO
-  INFO --> ARG
-  SRE -->|Retry / Wait &amp; Check| ADF
-
-  NOTIF["Teams / Email (Logic App)"]
-  APP -->|Non-retryable notify| NOTIF
-  MON -->|Action Group| NOTIF
-                  </div>
               </div>
             </div>
           </section>
@@ -330,23 +308,34 @@ end
     }
     function mermaidRenderVisible(){
       if (!ensureMermaidInit()) return;
-      try{
+        try{
         const nodes = document.querySelectorAll('.mermaid:not([data-processed])');
-        if (nodes && nodes.length) mermaid.init(undefined, nodes);
-      }catch(e){ console.error('Mermaid render error:', e); }
-      // Fallback: if still not processed after a tick, show raw text instead of an empty box
-      setTimeout(()=>{
-        document.querySelectorAll('.mermaid').forEach(el => {
-          if (!el.getAttribute('data-processed')){
-            const code = el.textContent.trim();
-            const pre = document.createElement('pre');
-            pre.className = 'text-xs text-gray-700 whitespace-pre overflow-auto';
-            pre.textContent = code;
-            el.replaceWith(pre);
-          }
-        });
-      }, 1200);
-    }
+        nodes.forEach(el => {
+          let t = el.textContent || "";
+      // remove leading whitespace/newlines
+      t = t.replace(/^\s+/, "");
+      // normalize NBSP and odd unicode spaces
+      t = t.replace(/\u00A0/g, " ");                         // NBSP
+      t = t.replace(/[\u2000-\u200B\u202F\u205F\u3000]/g, " "); // various thin/ideographic spaces
+      el.textContent = t;
+    });
+    if (nodes.length) mermaid.init(undefined, nodes);
+  }catch(e){
+    console.error('Mermaid render error:', e);
+  }
+  setTimeout(()=>{
+    document.querySelectorAll('.mermaid').forEach(el => {
+      if (!el.getAttribute('data-processed')){
+        const code = (el.textContent || '').trim();
+        const pre = document.createElement('pre');
+        pre.className = 'text-xs text-gray-700 whitespace-pre overflow-auto';
+        pre.textContent = code;
+        el.replaceWith(pre);
+      }
+    });
+  }, 1200);
+}
+
 
     // ---------- tabs ----------
     const tabs = {
